@@ -99,10 +99,12 @@ const selectedGroup = ref(null)
 const activeChat = ref(null)
 
 function onSelectContact(contact) {
-  if (contact.type === 'group') {
-    // Right-click or click group header to show group info
-  }
   activeChat.value = contact
+}
+
+function onGroupInfo(group) {
+  selectedGroup.value = { id: group.id, name: group.name }
+  showGroupInfo.value = true
 }
 
 function openFriendRequests() {
