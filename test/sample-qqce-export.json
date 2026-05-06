@@ -1,0 +1,112 @@
+{
+  "metadata": {
+    "exportVersion": "4.0",
+    "exportTime": "2026-05-06 12:00:00"
+  },
+  "chatInfo": {
+    "name": "摸鱼小分队",
+    "type": "group"
+  },
+  "statistics": {
+    "totalMessages": 12,
+    "participants": 3
+  },
+  "messages": [
+    {
+      "id": "1",
+      "timestamp": 1715000000000,
+      "time": "2024-05-06 14:00:00",
+      "sender": {"uid": "u1", "uin": "10001", "name": "小王"},
+      "content": {"text": "太棒了！今天周五！哈哈终于可以休息了"},
+      "type": "text"
+    },
+    {
+      "id": "2",
+      "timestamp": 1715000060000,
+      "time": "2024-05-06 14:01:00",
+      "sender": {"uid": "u2", "uin": "10002", "name": "小李"},
+      "content": {"text": "是呀是呀，这周累死了呢，感觉身体被掏空"},
+      "type": "text"
+    },
+    {
+      "id": "3",
+      "timestamp": 1715000120000,
+      "time": "2024-05-06 14:02:00",
+      "sender": {"uid": "u1", "uin": "10001", "name": "小王"},
+      "content": {"text": "晚上去吃火锅怎么样？我馋了好久了"},
+      "type": "text"
+    },
+    {
+      "id": "4",
+      "timestamp": 1715000180000,
+      "time": "2024-05-06 14:03:00",
+      "sender": {"uid": "u3", "uin": "10003", "name": "老张"},
+      "content": {"text": "好啊好啊！我知道一家新开的，超级好吃！"},
+      "type": "text"
+    },
+    {
+      "id": "5",
+      "timestamp": 1715000240000,
+      "time": "2024-05-06 14:04:00",
+      "sender": {"uid": "u2", "uin": "10002", "name": "小李"},
+      "content": {"text": "哇真的吗？在哪儿在哪儿？快告诉我！"},
+      "type": "text"
+    },
+    {
+      "id": "6",
+      "timestamp": 1715000300000,
+      "time": "2024-05-06 14:05:00",
+      "sender": {"uid": "u1", "uin": "10001", "name": "小王"},
+      "content": {"text": "哈哈就在公司楼下那条街，走过去五分钟"},
+      "type": "text"
+    },
+    {
+      "id": "7",
+      "timestamp": 1715000360000,
+      "time": "2024-05-06 14:06:00",
+      "sender": {"uid": "u3", "uin": "10003", "name": "老张"},
+      "content": {"text": "绝了！那就这么定了！下班一起冲！"},
+      "type": "text"
+    },
+    {
+      "id": "8",
+      "timestamp": 1715000420000,
+      "time": "2024-05-06 14:07:00",
+      "sender": {"uid": "u2", "uin": "10002", "name": "小李"},
+      "content": {"text": "好的好的，我先把手头这点活干完，快了"},
+      "type": "text"
+    },
+    {
+      "id": "9",
+      "timestamp": 1715000480000,
+      "time": "2024-05-06 14:08:00",
+      "sender": {"uid": "u1", "uin": "10001", "name": "小王"},
+      "content": {"text": "没事不急，我们等你。对了记得带伞，外面好像要下雨"},
+      "type": "text"
+    },
+    {
+      "id": "10",
+      "timestamp": 1715000540000,
+      "time": "2024-05-06 14:09:00",
+      "sender": {"uid": "u3", "uin": "10003", "name": "老张"},
+      "content": {"text": "哇你太贴心了吧！我差点忘了看天气预报"},
+      "type": "text"
+    },
+    {
+      "id": "11",
+      "timestamp": 1715000600000,
+      "time": "2024-05-06 14:10:00",
+      "sender": {"uid": "u2", "uin": "10002", "name": "小李"},
+      "content": {"text": "哈哈哈我们老王就是细心，难怪大家都喜欢"},
+      "type": "text"
+    },
+    {
+      "id": "12",
+      "timestamp": 1715000660000,
+      "time": "2024-05-06 14:11:00",
+      "sender": {"uid": "u1", "uin": "10001", "name": "小王"},
+      "content": {"text": "嘿嘿别夸了，快干活吧！六点准时出发"},
+      "type": "text"
+    }
+  ]
+}

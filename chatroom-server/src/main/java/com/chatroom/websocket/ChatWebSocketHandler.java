@@ -10,6 +10,7 @@ import com.chatroom.model.entity.Friend;
 import com.chatroom.model.entity.Message;
 import com.chatroom.model.entity.User;
 import com.chatroom.model.vo.MessageVO;
+import com.chatroom.service.BotManager;
 import com.chatroom.service.MessageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,8 @@ import java.security.Principal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -39,6 +42,7 @@ public class ChatWebSocketHandler {
     private final UserMapper userMapper;
     private final FriendMapper friendMapper;
     private final OnlineStatusManager onlineStatusManager;
+    private final BotManager botManager;
 
     // sessionId -> userId
     private final ConcurrentHashMap<String, Long> sessionUserMap = new ConcurrentHashMap<>();
@@ -121,9 +125,80 @@ public class ChatWebSocketHandler {
                     String.valueOf(senderId), "/queue/private/chat", payload);
             messagingTemplate.convertAndSendToUser(
                     String.valueOf(dto.getTargetId()), "/queue/private/chat", payload);
+
+            // Bot routing: check if target is a bot
+            User targetUser = userMapper.selectById(dto.getTargetId());
+            if (targetUser != null && targetUser.getIsBot() != null && targetUser.getIsBot() == 1) {
+                handleBotReply(senderId, dto.getTargetId(), messageVO);
+            }
         } else if (dto.getMessageType() == Constants.MSG_TYPE_GROUP) {
             messagingTemplate.convertAndSend(
                     "/topic/group/" + dto.getTargetId(), payload);
+
+            // Bot routing: check if message contains @mention of a bot
+            handleGroupBotReply(senderId, dto.getTargetId(), dto.getContent(), messageVO);
+        }
+    }
+
+    private void handleBotReply(Long senderId, Long botUserId, MessageVO userMessage) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                User sender = userMapper.selectById(senderId);
+                String senderName = sender != null ? sender.getNickname() : "用户";
+                String reply = botManager.handleBotMessage(botUserId, senderId, senderName, userMessage.getContent());
+                if (reply != null && !reply.trim().isEmpty()) {
+                    pushBotMessage(botUserId, senderId, reply, Constants.MSG_TYPE_PRIVATE);
+                }
+            } catch (Exception e) {
+                log.error("Bot {} reply error", botUserId, e);
+            }
+        });
+    }
+
+    private void handleGroupBotReply(Long senderId, Long groupId, String content, MessageVO userMessage) {
+        List<User> bots = userMapper.selectList(
+                new LambdaQueryWrapper<User>().eq(User::getIsBot, 1));
+        CompletableFuture.runAsync(() -> {
+            for (User bot : bots) {
+                // Check if bot is mentioned in the message
+                if (content != null && (content.contains("@" + bot.getNickname())
+                        || content.contains("@" + bot.getUsername()))) {
+                    try {
+                        User sender = userMapper.selectById(senderId);
+                        String senderName = sender != null ? sender.getNickname() : "用户";
+                        String reply = botManager.handleBotMessage(bot.getId(), senderId, senderName,
+                                content.replace("@" + bot.getNickname(), "")
+                                      .replace("@" + bot.getUsername(), "").trim());
+                        if (reply != null && !reply.trim().isEmpty()) {
+                            pushBotMessage(bot.getId(), groupId, reply, Constants.MSG_TYPE_GROUP);
+                        }
+                    } catch (Exception e) {
+                        log.error("Bot {} group reply error", bot.getId(), e);
+                    }
+                }
+            }
+        });
+    }
+
+    private void pushBotMessage(Long botUserId, Long targetId, String content, int messageType) {
+        ChatMessageDTO botDto = new ChatMessageDTO();
+        botDto.setContent(content);
+        botDto.setMessageType(messageType);
+        botDto.setTargetId(targetId);
+        botDto.setContentType(Constants.CONTENT_TYPE_TEXT);
+        botDto.setClientMessageId("BOT_" + UUID.randomUUID().toString());
+
+        MessageVO botMsg = messageService.sendAndSaveMessage(botUserId, botDto);
+        Map<String, Object> botPayload = buildWsPayload(botMsg);
+
+        if (messageType == Constants.MSG_TYPE_PRIVATE) {
+            messagingTemplate.convertAndSendToUser(
+                    String.valueOf(targetId), "/queue/private/chat", botPayload);
+            messagingTemplate.convertAndSendToUser(
+                    String.valueOf(botUserId), "/queue/private/chat", botPayload);
+        } else {
+            messagingTemplate.convertAndSend(
+                    "/topic/group/" + targetId, botPayload);
         }
     }
 

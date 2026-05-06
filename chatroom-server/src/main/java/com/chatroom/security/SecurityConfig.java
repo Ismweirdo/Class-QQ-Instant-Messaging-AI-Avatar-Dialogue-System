@@ -26,6 +26,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                .requestMatchers("/api/bots/config", "/api/bots/qq/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**").permitAll()

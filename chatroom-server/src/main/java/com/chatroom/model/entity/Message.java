@@ -16,6 +16,7 @@ public class Message {
     private String content;
     private Integer contentType;
     private Integer status;
+    private String clientMessageId;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 }

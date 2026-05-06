@@ -14,6 +14,7 @@ public class User {
     private String nickname;
     private String avatar;
     private Integer status;
+    private Integer isBot;
     private LocalDateTime lastLoginTime;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

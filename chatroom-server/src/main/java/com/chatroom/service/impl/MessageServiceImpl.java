@@ -28,6 +28,16 @@ public class MessageServiceImpl implements MessageService {
     @Override
     @Transactional
     public MessageVO sendAndSaveMessage(Long senderId, ChatMessageDTO dto) {
+        // Dedup: check clientMessageId first
+        if (dto.getClientMessageId() != null && !dto.getClientMessageId().isEmpty()) {
+            Message existing = messageMapper.selectOne(
+                    new LambdaQueryWrapper<Message>()
+                            .eq(Message::getClientMessageId, dto.getClientMessageId()));
+            if (existing != null) {
+                return toMessageVO(existing);
+            }
+        }
+
         Message msg = new Message();
         msg.setMessageType(dto.getMessageType());
         msg.setSenderId(senderId);
@@ -36,6 +46,7 @@ public class MessageServiceImpl implements MessageService {
         msg.setContent(dto.getContent());
         msg.setContentType(dto.getContentType() != null ? dto.getContentType() : Constants.CONTENT_TYPE_TEXT);
         msg.setStatus(Constants.MSG_STATUS_SENT);
+        msg.setClientMessageId(dto.getClientMessageId());
         msg.setCreatedAt(LocalDateTime.now());
         messageMapper.insert(msg);
 

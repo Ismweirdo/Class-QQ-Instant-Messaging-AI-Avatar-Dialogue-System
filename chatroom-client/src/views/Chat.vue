@@ -3,40 +3,46 @@
     <!-- Left Sidebar -->
     <div class="sidebar">
       <div class="sidebar-header">
-      <div class="user-info">
-        <div class="user-avatar">{{ (userStore.nickname || userStore.username || '?')[0] }}</div>
-        <div class="user-details">
-          <div class="nickname">{{ userStore.nickname || userStore.username }}</div>
-          <div class="status-indicator">
-            <span class="status-dot"></span>
-            <span>在线</span>
+        <div class="user-info">
+          <div class="user-avatar">{{ (userStore.nickname || userStore.username || '?')[0] }}</div>
+          <div class="user-details">
+            <div class="nickname">{{ userStore.nickname || userStore.username }}</div>
+            <div class="status-indicator">
+              <span class="status-dot"></span>
+              <span>在线</span>
+            </div>
           </div>
+          <el-dropdown trigger="click" @command="handleUserCommand">
+            <span class="dropdown-trigger">
+              <el-icon><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
-        <el-dropdown trigger="click" @command="handleUserCommand">
-          <span class="dropdown-trigger">
-            <el-icon><ArrowDown /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
-      <div class="header-actions">
-        <el-badge :value="contactStore.pendingRequests.length" :hidden="!contactStore.hasPendingRequests">
-          <button class="action-btn" @click="openFriendRequests">
-            <el-icon><UserFilled /></el-icon>
+        <div class="header-actions">
+          <el-badge :value="contactStore.pendingRequests.length" :hidden="!contactStore.hasPendingRequests">
+            <button class="action-btn" @click="openFriendRequests">
+              <el-icon><UserFilled /></el-icon>
+            </button>
+          </el-badge>
+          <button class="action-btn" @click="showAddFriend = true">
+            <el-icon><Plus /></el-icon>
           </button>
-        </el-badge>
-        <button class="action-btn" @click="showAddFriend = true">
-          <el-icon><Plus /></el-icon>
-        </button>
-        <button class="action-btn" @click="showCreateGroup = true">
-          <el-icon><Message /></el-icon>
-        </button>
+          <button class="action-btn" @click="showCreateGroup = true">
+            <el-icon><Message /></el-icon>
+          </button>
+          <button class="action-btn" @click="showImportBots = true" title="导入聊天记录文件生成机器人">
+            <el-icon><Download /></el-icon>
+          </button>
+          <button class="action-btn" @click="showQQImport = true" title="从QQ导入聊天记录生成机器人">
+            <el-icon><ChatDotSquare /></el-icon>
+          </button>
+        </div>
       </div>
-    </div>
       <ContactList @select="onSelectContact" @group-info="onGroupInfo" />
     </div>
 
@@ -68,19 +74,25 @@
         暂无待处理的好友申请
       </div>
       <div v-for="req in contactStore.pendingRequests" :key="req.id" class="request-item">
-          <div class="request-info">
-            <div class="request-avatar">{{ (req.nickname || req.username)[0] }}</div>
-            <div>
-              <div class="request-name">{{ req.nickname || req.username }}</div>
-              <div class="request-username">@{{ req.username }}</div>
-            </div>
-          </div>
-          <div class="request-actions">
-            <el-button type="primary" size="small" @click="handleAccept(req.friendId)">接受</el-button>
-            <el-button size="small" @click="handleReject(req.friendId)">拒绝</el-button>
+        <div class="request-info">
+          <div class="request-avatar">{{ (req.nickname || req.username)[0] }}</div>
+          <div>
+            <div class="request-name">{{ req.nickname || req.username }}</div>
+            <div class="request-username">@{{ req.username }}</div>
           </div>
         </div>
+        <div class="request-actions">
+          <el-button type="primary" size="small" @click="handleAccept(req.friendId)">接受</el-button>
+          <el-button size="small" @click="handleReject(req.friendId)">拒绝</el-button>
+        </div>
+      </div>
     </el-dialog>
+
+    <!-- Import Bots Dialog -->
+    <ImportBotsDialog v-model:visible="showImportBots" @done="onBotsImported" />
+
+    <!-- QQ Import Dialog -->
+    <QQImportDialog v-model:visible="showQQImport" @done="onBotsImported" />
 
     <!-- Group Info Dialog -->
     <GroupInfoDialog v-model:visible="showGroupInfo" :group="selectedGroup" @refresh="refreshContacts" />
@@ -96,12 +108,14 @@ import { useChatStore } from '../store/chat'
 import { connectWebSocket, disconnectWebSocket, addMessageHandler, removeMessageHandler, addPresenceHandler, removePresenceHandler, subscribeGroupMessages } from '../utils/websocket'
 import { acceptFriendRequest, rejectFriendRequest } from '../api/friend'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, UserFilled, Plus, Message, ChatDotRound } from '@element-plus/icons-vue'
+import { ArrowDown, UserFilled, Plus, Message, ChatDotRound, Download, ChatDotSquare } from '@element-plus/icons-vue'
 import ContactList from '../components/ContactList.vue'
 import ChatWindow from '../components/ChatWindow.vue'
 import AddFriendDialog from '../components/AddFriendDialog.vue'
 import CreateGroupDialog from '../components/CreateGroupDialog.vue'
 import GroupInfoDialog from '../components/GroupInfoDialog.vue'
+import ImportBotsDialog from '../components/ImportBotsDialog.vue'
+import QQImportDialog from '../components/QQImportDialog.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -110,6 +124,8 @@ const chatStore = useChatStore()
 
 const showAddFriend = ref(false)
 const showCreateGroup = ref(false)
+const showImportBots = ref(false)
+const showQQImport = ref(false)
 const showFriendRequests = ref(false)
 const showGroupInfo = ref(false)
 const selectedGroup = ref(null)
@@ -136,6 +152,12 @@ async function onAddFriendDone() {
 
 async function onGroupCreated() {
   showCreateGroup.value = false
+  await refreshContacts()
+}
+
+async function onBotsImported() {
+  showImportBots.value = false
+  showQQImport.value = false
   await refreshContacts()
 }
 

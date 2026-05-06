@@ -51,3 +51,11 @@ knife4j:
 logging:
   level:
     com.chatroom: debug
+
+# Bot configuration
+# Set API key via environment variable: export BOT_API_KEY=sk-your-key
+# Or paste directly below (not recommended for production)
+bot:
+  default-api-key: ${BOT_API_KEY:sk-d2919df6a5c24206a6fb77ad084d0a29}
+  default-api-endpoint: ${BOT_API_ENDPOINT:https://api.deepseek.com/v1/chat/completions}
+  default-model: ${BOT_API_MODEL:deepseek-chat}

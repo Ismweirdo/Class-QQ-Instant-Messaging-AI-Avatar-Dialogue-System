@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     nickname VARCHAR(50),
     avatar VARCHAR(255),
     status TINYINT DEFAULT 0,
+    is_bot TINYINT DEFAULT 0,
     last_login_time DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -54,9 +55,31 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     content_type TINYINT DEFAULT 0,
     status TINYINT DEFAULT 0,
+    client_message_id VARCHAR(36),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_target_time (message_type, target_id, created_at),
     INDEX idx_private_query (sender_id, target_id, created_at),
     INDEX idx_created_at (created_at),
-    INDEX idx_reply (reply_to_id)
+    INDEX idx_reply (reply_to_id),
+    UNIQUE KEY uk_client_msg (client_message_id)
+);
+
+CREATE TABLE IF NOT EXISTS bot_skills (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    bot_user_id BIGINT NOT NULL,
+    skill_name VARCHAR(100),
+    emotion_profile_json TEXT,
+    language_style_json TEXT,
+    system_prompt TEXT,
+    few_shot_examples TEXT,
+    api_endpoint VARCHAR(255),
+    api_key VARCHAR(255),
+    model VARCHAR(100),
+    status TINYINT DEFAULT 1,
+    error_count INT DEFAULT 0,
+    last_active_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_bot_user (bot_user_id),
+    INDEX idx_bot_status (status)
 );

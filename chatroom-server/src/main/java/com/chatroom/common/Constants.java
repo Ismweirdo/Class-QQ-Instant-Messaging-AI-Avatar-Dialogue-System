@@ -41,4 +41,23 @@ public class Constants {
     // Page defaults
     public static final int DEFAULT_PAGE_SIZE = 20;
     public static final int MAX_PAGE_SIZE = 100;
+
+    // Bot status
+    public static final int BOT_STATUS_ACTIVE = 1;
+    public static final int BOT_STATUS_INACTIVE = 0;
+    public static final int BOT_STATUS_CIRCUIT_BROKEN = 2;
+
+    // Bot limits
+    public static final int BOT_CIRCUIT_BREAK_THRESHOLD = 3;
+    public static final long BOT_CIRCUIT_BREAK_SILENCE_MS = 30_000;
+    public static final int BOT_MAX_QUEUE_SIZE = 10;
+    public static final int BOT_MAX_CONCURRENCY = 1;
+
+    // Distillation
+    public static final int DISTILL_MIN_MESSAGES = 100;
+    public static final int DISTILL_CONTEXT_WINDOW = 4;
+    public static final int DISTILL_MAX_WORDS = 50;
+    public static final int DISTILL_MIN_WORDS = 5;
+    public static final int DISTILL_MAX_CHARS = 200;
+    public static final int DISTILL_MIN_CHARS = 5;
 }
