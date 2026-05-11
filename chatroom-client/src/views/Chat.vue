@@ -43,7 +43,7 @@
           </button>
         </div>
       </div>
-      <ContactList @select="onSelectContact" @group-info="onGroupInfo" />
+      <ContactList @select="onSelectContact" @group-info="onGroupInfo" @friend-deleted="onFriendDeleted" />
     </div>
 
     <!-- Right Chat Area -->
@@ -165,6 +165,14 @@ async function refreshContacts() {
   await contactStore.fetchAll()
 }
 
+async function onFriendDeleted(friendId) {
+  if (activeChat.value && activeChat.value.type === 'private' && activeChat.value.id === friendId) {
+    activeChat.value = null
+    contactStore.setActiveContact(null)
+  }
+  await refreshContacts()
+}
+
 function handleMessage(msg) {
   let key
   if (msg.messageType === 0) {
@@ -254,9 +262,12 @@ onUnmounted(() => {
 
 .sidebar {
   width: 360px;
+  height: 100vh;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
   border-right: 1px solid var(--border-light);
   box-shadow: var(--shadow-sm);
 }

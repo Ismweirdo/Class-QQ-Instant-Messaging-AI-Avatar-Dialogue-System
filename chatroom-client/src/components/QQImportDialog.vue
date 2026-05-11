@@ -18,7 +18,7 @@
     </div>
 
     <!-- Step 1: Select contacts -->
-    <div v-else-if="!importing">
+    <div v-else-if="!importing && importResults.length === 0">
       <el-alert type="success" :closable="false" style="margin-bottom:12px">
         已连接 QQ Chat Exporter，共 {{ friends.length }} 个好友，{{ groups.length }} 个群
       </el-alert>
@@ -68,10 +68,52 @@
     </div>
 
     <!-- Step 2: Importing -->
-    <div v-else style="text-align:center;padding:40px;">
+    <div v-else-if="importing" style="text-align:center;padding:40px;">
       <el-icon :size="48" color="#409EFF" class="is-loading"><Loading /></el-icon>
       <p style="margin-top:16px;color:#666;">正在从 QQ 获取聊天记录并生成机器人...</p>
       <p style="font-size:12px;color:#999;">这可能需要几分钟，请耐心等待</p>
+    </div>
+
+    <!-- Step 3: Result -->
+    <div v-else>
+      <el-alert
+        :type="totalGenerated > 0 ? 'success' : 'warning'"
+        :closable="false"
+        style="margin-bottom:12px"
+      >
+        <template #title>
+          {{ totalGenerated > 0 ? `已生成 ${totalGenerated} 个机器人` : '未生成机器人' }}
+        </template>
+        {{ totalGenerated > 0 ? '以下为每个联系人/群聊的导入诊断结果。' : '请根据下面诊断结果调整导入范围或消息条数后重试。' }}
+      </el-alert>
+
+      <div class="diag-list">
+        <div v-for="(r, idx) in importResults" :key="idx" class="diag-item">
+          <div class="diag-title">
+            <strong>{{ r.selectionName || '-' }}</strong>
+            <el-tag size="small" :type="r.status === 'generated' ? 'success' : (r.status === 'error' ? 'danger' : 'warning')">
+              {{ r.status }}
+            </el-tag>
+          </div>
+          <div class="diag-line">类型: {{ r.selectionType }} | ID: {{ r.selectionId }}</div>
+          <div class="diag-line">rawMessageCount: {{ r.rawMessageCount }} | simpleMessageCount: {{ r.simpleMessageCount }} | generatedCount: {{ r.generatedCount }}</div>
+          <div class="diag-line">message: {{ r.message }}</div>
+          <div class="diag-line">senderStats: {{ formatSenderStats(r.senderStats) }}</div>
+          <div v-if="r.rawPreview && r.rawPreview.length" class="diag-raw">
+            <div class="diag-line"><b>rawPreview（前{{ r.rawPreview.length }}条结构摘要）</b></div>
+            <div v-for="(p, pIdx) in r.rawPreview" :key="pIdx" class="diag-raw-item">
+              <div class="diag-line">#{{ p.index }} topLevelKeys: {{ formatKeys(p.topLevelKeys) }}</div>
+              <div class="diag-line">senderHints: {{ formatObj(p.senderHints) }}</div>
+              <div class="diag-line">contentHints: {{ formatObj(p.contentHints) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align:center;margin-top:16px;">
+        <el-button @click="resetResult">继续导入</el-button>
+        <el-button type="primary" @click="closeDialog">完成</el-button>
+      </div>
     </div>
   </el-dialog>
 </template>
@@ -99,6 +141,9 @@ const qqTab = ref('friends')
 const friendFilter = ref('')
 const groupFilter = ref('')
 const importing = ref(false)
+const importResults = ref([])
+const totalGenerated = computed(() =>
+  importResults.value.reduce((sum, item) => sum + Number(item.generatedCount || 0), 0))
 
 const filteredFriends = computed(() => {
   if (!friendFilter.value) return friends.value
@@ -124,6 +169,7 @@ async function onOpen() {
   groups.value = []
   selections.value = []
   importing.value = false
+  importResults.value = []
   msgCount.value = 500
   friendFilter.value = ''
   groupFilter.value = ''
@@ -168,18 +214,51 @@ async function doQQImport() {
   if (selections.value.length === 0) return
   importing.value = true
   try {
-    await qqImportBots({
+    const res = await qqImportBots({
       selections: selections.value,
       messageCount: msgCount.value
     })
-    ElMessage.success('QQ聊天记录已导入，机器人已生成')
-    visible.value = false
-    emit('done')
+    importResults.value = Array.isArray(res) ? res : []
+    if (totalGenerated.value > 0) {
+      ElMessage.success(`QQ导入完成，已生成 ${totalGenerated.value} 个机器人`)
+      emit('done')
+    } else {
+      ElMessage.warning('QQ导入完成，但未生成机器人，请查看诊断结果')
+    }
   } catch (e) {
     ElMessage.error('导入失败: ' + (e.message || '未知错误'))
   } finally {
     importing.value = false
   }
+}
+
+function formatSenderStats(stats) {
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) return '-'
+  const entries = Object.entries(stats)
+  if (entries.length === 0) return '{}'
+  return entries.map(([k, v]) => `${k}: ${v}`).join(', ')
+}
+
+function formatKeys(keys) {
+  if (!Array.isArray(keys)) return '-'
+  return keys.join(', ')
+}
+
+function formatObj(obj) {
+  if (!obj || typeof obj !== 'object') return '-'
+  try {
+    return JSON.stringify(obj)
+  } catch {
+    return String(obj)
+  }
+}
+
+function resetResult() {
+  importResults.value = []
+}
+
+function closeDialog() {
+  visible.value = false
 }
 </script>
 
@@ -203,4 +282,46 @@ async function doQQImport() {
 .qq-contact-item.selected { background: #e6f4ff; }
 .qq-contact-item:last-child { border-bottom: none; }
 .qq-contact-name { flex: 1; font-size: 14px; }
+
+.diag-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 6px;
+}
+.diag-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.diag-item:last-child { border-bottom: none; }
+.diag-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.diag-line {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.diag-raw {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #fafafa;
+  border: 1px dashed #e5e7eb;
+  border-radius: 4px;
+}
+
+.diag-raw-item {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dotted #eee;
+}
+.diag-raw-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
 </style>

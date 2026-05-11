@@ -8,52 +8,68 @@
     <!-- Tabs -->
     <el-tabs v-model="activeTab" class="contact-tabs">
       <el-tab-pane label="好友" name="friends">
-        <div v-if="contactStore.friendList.length === 0" class="empty-hint">
-          <div class="empty-hint-icon">
-            <el-icon :size="28" color="var(--text-muted)"><User /></el-icon>
-          </div>
-          <div class="empty-hint-title">暂无好友</div>
-          <div class="empty-hint-desc">点击 + 按钮添加好友</div>
-        </div>
-        <div v-for="friend in filteredFriends" :key="friend.friendId"
-          class="contact-item" :class="{ active: isActive('private', friend.friendId) }"
-          @click="selectContact('private', friend.friendId, friend.nickname || friend.username)">
-          <div class="avatar-wrapper">
-            <el-avatar class="contact-avatar">{{ (friend.nickname || friend.username)[0] }}</el-avatar>
-            <div class="status-badge" :class="{ online: friend.status === 1, offline: friend.status !== 1 }"></div>
-          </div>
-          <div class="contact-info">
-            <div class="contact-name">{{ friend.nickname || friend.username }}</div>
-            <div class="contact-status">
-              <span v-if="friend.status === 1" style="color: #22c55e">在线</span>
-              <span v-else>离线</span>
+        <div class="contact-pane">
+          <div v-if="contactStore.friendList.length === 0" class="empty-hint">
+            <div class="empty-hint-icon">
+              <el-icon :size="28" color="var(--text-muted)"><User /></el-icon>
             </div>
+            <div class="empty-hint-title">暂无好友</div>
+            <div class="empty-hint-desc">点击 + 按钮添加好友</div>
+          </div>
+          <div v-for="friend in filteredFriends" :key="friend.friendId"
+            class="contact-item" :class="{ active: isActive('private', friend.friendId) }"
+            @click="selectContact('private', friend.friendId, friend.nickname || friend.username)">
+            <div class="avatar-wrapper">
+              <el-avatar class="contact-avatar">{{ (friend.nickname || friend.username)[0] }}</el-avatar>
+              <div class="status-badge" :class="{ online: friend.status === 1, offline: friend.status !== 1 }"></div>
+            </div>
+            <div class="contact-info">
+              <div class="contact-name">{{ friend.nickname || friend.username }}</div>
+              <div class="contact-status">
+                <span v-if="friend.status === 1" style="color: #22c55e">在线</span>
+                <span v-else>离线</span>
+              </div>
+            </div>
+            <el-popconfirm
+              title="确认删除该好友吗？"
+              confirm-button-text="删除"
+              cancel-button-text="取消"
+              @confirm="handleDeleteFriend(friend)"
+            >
+              <template #reference>
+                <button class="delete-friend-btn" @click.stop aria-label="删除好友">
+                  删除
+                </button>
+              </template>
+            </el-popconfirm>
           </div>
         </div>
       </el-tab-pane>
 
       <el-tab-pane label="群聊" name="groups">
-        <div v-if="filteredGroups.length === 0 && !search" class="empty-hint">
-          <div class="empty-hint-icon">
-            <el-icon :size="28" color="var(--text-muted)"><Message /></el-icon>
+        <div class="contact-pane">
+          <div v-if="filteredGroups.length === 0 && !search" class="empty-hint">
+            <div class="empty-hint-icon">
+              <el-icon :size="28" color="var(--text-muted)"><Message /></el-icon>
+            </div>
+            <div class="empty-hint-title">暂无群聊</div>
+            <div class="empty-hint-desc">点击消息图标创建群聊</div>
           </div>
-          <div class="empty-hint-title">暂无群聊</div>
-          <div class="empty-hint-desc">点击消息图标创建群聊</div>
-        </div>
-        <div v-for="group in filteredGroups" :key="group.id"
-          class="contact-item" :class="{ active: isActive('group', group.id) }"
-          @click="selectContact('group', group.id, group.name)"
-          @dblclick="emit('groupInfo', group)">
-          <div class="avatar-wrapper">
-            <el-avatar class="contact-avatar" style="background: linear-gradient(135deg, #f59e0b, #ef4444);">
-              {{ group.name[0] }}
-            </el-avatar>
-          </div>
-          <div class="contact-info">
-            <div class="contact-name">{{ group.name }}</div>
-            <div class="contact-status">
-              <span class="group-icon">{{ group.memberCount }}</span>
-              <span>{{ group.memberCount }} 位成员</span>
+          <div v-for="group in filteredGroups" :key="group.id"
+            class="contact-item" :class="{ active: isActive('group', group.id) }"
+            @click="selectContact('group', group.id, group.name)"
+            @dblclick="emit('groupInfo', group)">
+            <div class="avatar-wrapper">
+              <el-avatar class="contact-avatar" style="background: linear-gradient(135deg, #f59e0b, #ef4444);">
+                {{ group.name[0] }}
+              </el-avatar>
+            </div>
+            <div class="contact-info">
+              <div class="contact-name">{{ group.name }}</div>
+              <div class="contact-status">
+                <span class="group-icon">{{ group.memberCount }}</span>
+                <span>{{ group.memberCount }} 位成员</span>
+              </div>
             </div>
           </div>
         </div>
@@ -65,9 +81,11 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useContactStore } from '../store/contact'
+import { deleteFriend } from '../api/friend'
+import { ElMessage } from 'element-plus'
 import { User, Message } from '@element-plus/icons-vue'
 
-const emit = defineEmits(['select', 'groupInfo'])
+const emit = defineEmits(['select', 'groupInfo', 'friendDeleted'])
 const contactStore = useContactStore()
 const search = ref('')
 const activeTab = ref('friends')
@@ -96,11 +114,24 @@ function selectContact(type, id, name) {
   contactStore.setActiveContact(contact)
   emit('select', contact)
 }
+
+async function handleDeleteFriend(friend) {
+  try {
+    await deleteFriend(friend.friendId)
+    ElMessage.success('好友已删除')
+    await contactStore.fetchFriends()
+    emit('friendDeleted', friend.friendId)
+  } catch (e) {
+    ElMessage.error(e?.message || '删除好友失败')
+  }
+}
 </script>
 
 <style scoped>
 .contact-list {
+  height: 100%;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -124,11 +155,13 @@ function selectContact(type, id, name) {
 
 .contact-tabs {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
 .contact-tabs :deep(.el-tabs__header) {
+  flex-shrink: 0;
   padding: 0 16px;
   margin-bottom: 0;
 }
@@ -139,7 +172,20 @@ function selectContact(type, id, name) {
 
 .contact-tabs :deep(.el-tabs__content) {
   flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.contact-tabs :deep(.el-tab-pane) {
+  height: 100%;
+  min-height: 0;
+}
+
+.contact-pane {
+  height: 100%;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .contact-item {
@@ -217,6 +263,20 @@ function selectContact(type, id, name) {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.delete-friend-btn {
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.delete-friend-btn:hover {
+  background: rgba(239, 68, 68, 0.08);
 }
 
 .group-icon {

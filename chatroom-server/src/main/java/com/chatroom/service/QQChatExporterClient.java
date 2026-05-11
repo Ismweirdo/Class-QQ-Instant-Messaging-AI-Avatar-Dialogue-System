@@ -20,10 +20,15 @@ public class QQChatExporterClient {
     @Value("${bot.qqce-url:http://localhost:40653}")
     private String qqceBaseUrl;
 
+    @Value("${qqce.access-token:}")
+    private String qqceAccessToken;
+
     /** Check if QQCE is running and accessible */
     public Map<String, Object> healthCheck() {
         try {
-            ResponseEntity<Map> resp = restTemplate.getForEntity(qqceBaseUrl + "/health", Map.class);
+            HttpEntity<Void> request = new HttpEntity<>(buildHeaders());
+            ResponseEntity<Map> resp = restTemplate.exchange(
+                    qqceBaseUrl + "/health", HttpMethod.GET, request, Map.class);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("connected", resp.getStatusCode().is2xxSuccessful());
             result.put("url", qqceBaseUrl);
@@ -40,7 +45,9 @@ public class QQChatExporterClient {
     /** Get friend list from QQ */
     public List<Map<String, Object>> getFriends() {
         try {
-            ResponseEntity<Map> resp = restTemplate.getForEntity(qqceBaseUrl + "/api/friends", Map.class);
+            HttpEntity<Void> request = new HttpEntity<>(buildHeaders());
+            ResponseEntity<Map> resp = restTemplate.exchange(
+                    qqceBaseUrl + "/api/friends", HttpMethod.GET, request, Map.class);
             Map<String, Object> data = (Map<String, Object>) resp.getBody().get("data");
             if (data == null) data = resp.getBody();
             List<Map<String, Object>> friends = (List<Map<String, Object>>) data.get("friends");
@@ -55,7 +62,9 @@ public class QQChatExporterClient {
     /** Get group list from QQ */
     public List<Map<String, Object>> getGroups() {
         try {
-            ResponseEntity<Map> resp = restTemplate.getForEntity(qqceBaseUrl + "/api/groups", Map.class);
+            HttpEntity<Void> request = new HttpEntity<>(buildHeaders());
+            ResponseEntity<Map> resp = restTemplate.exchange(
+                    qqceBaseUrl + "/api/groups", HttpMethod.GET, request, Map.class);
             Map<String, Object> data = (Map<String, Object>) resp.getBody().get("data");
             if (data == null) data = resp.getBody();
             List<Map<String, Object>> groups = (List<Map<String, Object>>) data.get("groups");
@@ -77,7 +86,7 @@ public class QQChatExporterClient {
                 "limit", Math.min(count, 5000)
             );
 
-            HttpHeaders headers = new HttpHeaders();
+            HttpHeaders headers = buildHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
@@ -96,5 +105,13 @@ public class QQChatExporterClient {
             log.error("Failed to fetch messages for {}: {}", peerUid, e.getMessage());
             throw new RuntimeException("获取聊天记录失败: " + e.getMessage());
         }
+    }
+
+    private HttpHeaders buildHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        if (qqceAccessToken != null && !qqceAccessToken.isBlank()) {
+            headers.set("Authorization", "Bearer " + qqceAccessToken.trim());
+        }
+        return headers;
     }
 }
