@@ -15,16 +15,10 @@
       </div>
       
       <el-form :model="form" :rules="rules" ref="formRef" label-width="0">
-        <el-form-item prop="username">
-          <div class="input-group">
-            <el-icon class="input-icon"><User /></el-icon>
-            <el-input v-model="form.username" placeholder="用户名" size="large" />
-          </div>
-        </el-form-item>
         <el-form-item prop="nickname">
           <div class="input-group">
             <el-icon class="input-icon"><UserFilled /></el-icon>
-            <el-input v-model="form.nickname" placeholder="昵称（选填）" size="large" />
+            <el-input v-model="form.nickname" placeholder="昵称" size="large" />
           </div>
         </el-form-item>
         <el-form-item prop="password">
@@ -70,7 +64,6 @@ const formRef = ref(null)
 const loading = ref(false)
 
 const form = reactive({
-  username: '',
   nickname: '',
   password: '',
   confirmPassword: ''
@@ -85,9 +78,9 @@ const validateConfirm = (rule, value, callback) => {
 }
 
 const rules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 50, message: '用户名长度为3-50个字符', trigger: 'blur' }
+  nickname: [
+    { required: true, message: '请输入昵称', trigger: 'blur' },
+    { min: 1, max: 50, message: '昵称长度为1-50个字符', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
@@ -105,12 +98,11 @@ async function handleRegister() {
 
   loading.value = true
   try {
-    await userStore.register({
-      username: form.username,
+    const result = await userStore.register({
       password: form.password,
-      nickname: form.nickname || form.username
+      nickname: form.nickname
     })
-    ElMessage.success('注册成功')
+    ElMessage.success('注册成功！您的账号是：' + result.user.username + '，请牢记')
     router.push('/chat')
   } catch (e) {
     // Error handled by interceptor

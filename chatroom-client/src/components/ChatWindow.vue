@@ -25,7 +25,7 @@
     </div>
 
     <!-- Messages -->
-    <div class="chat-messages" ref="msgContainer">
+    <div class="chat-messages" ref="msgContainer" :style="backgroundStyle">
       <div v-if="loading" class="loading-hint">
         <div class="loading-spinner"></div>
         <div class="loading-text">加载中...</div>
@@ -97,7 +97,25 @@ const msgContainer = ref(null)
 const msgEnd = ref(null)
 const loading = ref(false)
 
+const STORAGE_KEY = 'chat-background'
+
 const chatKey = computed(() => `${props.type}_${props.targetId}`)
+
+const backgroundStyle = computed(() => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (!stored) return {}
+    const bg = JSON.parse(stored)
+    if (bg.type === 'color') return { backgroundColor: bg.value }
+    if (bg.type === 'gradient') return { background: bg.value }
+    if (bg.type === 'image') return {
+      backgroundImage: `url(${bg.value})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center'
+    }
+  } catch { /* ignore */ }
+  return {}
+})
 
 async function loadHistory() {
   chatStore.setCurrentChat(chatKey.value)

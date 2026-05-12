@@ -26,16 +26,12 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public LoginVO register(RegisterDTO dto) {
-        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(User::getUsername, dto.getUsername());
-        if (userMapper.selectCount(wrapper) > 0) {
-            throw new RuntimeException("用户名已存在");
-        }
+        String accountNumber = generateAccountNumber();
 
         User user = new User();
-        user.setUsername(dto.getUsername());
+        user.setUsername(accountNumber);
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
-        user.setNickname(dto.getNickname() != null ? dto.getNickname() : dto.getUsername());
+        user.setNickname(dto.getNickname());
         user.setAvatar("/avatars/default.png");
         user.setStatus(0);
         user.setLastLoginTime(LocalDateTime.now());
@@ -45,6 +41,19 @@ public class AuthServiceImpl implements AuthService {
         loginVO.setToken(jwtUtil.generateToken(user.getId(), user.getUsername()));
         loginVO.setUser(toUserVO(user));
         return loginVO;
+    }
+
+    private String generateAccountNumber() {
+        java.util.Random random = new java.util.Random();
+        for (int attempt = 0; attempt < 10; attempt++) {
+            String account = String.format("%08d", random.nextInt(100000000));
+            LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(User::getUsername, account);
+            if (userMapper.selectCount(wrapper) == 0) {
+                return account;
+            }
+        }
+        throw new RuntimeException("账号生成失败，请重试");
     }
 
     @Override

@@ -4,7 +4,10 @@
     <div class="sidebar">
       <div class="sidebar-header">
         <div class="user-info">
-          <div class="user-avatar">{{ (userStore.nickname || userStore.username || '?')[0] }}</div>
+          <div class="user-avatar" @click="showProfile = true" title="个人资料">
+            <img v-if="userStore.user?.avatar && !userStore.user.avatar.includes('default')" :src="userStore.user.avatar" class="avatar-img" />
+            <span v-else>{{ (userStore.nickname || userStore.username || '?')[0] }}</span>
+          </div>
           <div class="user-details">
             <div class="nickname">{{ userStore.nickname || userStore.username }}</div>
             <div class="status-indicator">
@@ -18,7 +21,10 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                <el-dropdown-item command="profile">个人设置</el-dropdown-item>
+                <el-dropdown-item command="background">聊天背景</el-dropdown-item>
+                <el-dropdown-item command="deleteAccount" divided>注销账户</el-dropdown-item>
+                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -96,6 +102,12 @@
 
     <!-- Group Info Dialog -->
     <GroupInfoDialog v-model:visible="showGroupInfo" :group="selectedGroup" @refresh="refreshContacts" />
+
+    <!-- Profile Dialog -->
+    <ProfileDialog v-model:visible="showProfile" :display-name="userStore.nickname || userStore.username" @updated="onProfileUpdated" />
+
+    <!-- Background Settings Dialog -->
+    <BackgroundSettings v-model:visible="showBackground" />
   </div>
 </template>
 
@@ -107,7 +119,8 @@ import { useContactStore } from '../store/contact'
 import { useChatStore } from '../store/chat'
 import { connectWebSocket, disconnectWebSocket, addMessageHandler, removeMessageHandler, addPresenceHandler, removePresenceHandler, subscribeGroupMessages } from '../utils/websocket'
 import { acceptFriendRequest, rejectFriendRequest } from '../api/friend'
-import { ElMessage } from 'element-plus'
+import { deleteAccount } from '../api/user'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, UserFilled, Plus, Message, ChatDotRound, Download, ChatDotSquare } from '@element-plus/icons-vue'
 import ContactList from '../components/ContactList.vue'
 import ChatWindow from '../components/ChatWindow.vue'
@@ -116,6 +129,8 @@ import CreateGroupDialog from '../components/CreateGroupDialog.vue'
 import GroupInfoDialog from '../components/GroupInfoDialog.vue'
 import ImportBotsDialog from '../components/ImportBotsDialog.vue'
 import QQImportDialog from '../components/QQImportDialog.vue'
+import ProfileDialog from '../components/ProfileDialog.vue'
+import BackgroundSettings from '../components/BackgroundSettings.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -128,6 +143,8 @@ const showImportBots = ref(false)
 const showQQImport = ref(false)
 const showFriendRequests = ref(false)
 const showGroupInfo = ref(false)
+const showProfile = ref(false)
+const showBackground = ref(false)
 const selectedGroup = ref(null)
 const activeChat = ref(null)
 
@@ -206,11 +223,40 @@ async function handleReject(friendId) {
 }
 
 function handleUserCommand(command) {
-  if (command === 'logout') {
+  if (command === 'profile') {
+    showProfile.value = true
+  } else if (command === 'background') {
+    showBackground.value = true
+  } else if (command === 'deleteAccount') {
+    confirmDeleteAccount()
+  } else if (command === 'logout') {
     disconnectWebSocket()
     userStore.logout()
     router.push('/login')
   }
+}
+
+async function confirmDeleteAccount() {
+  try {
+    await ElMessageBox.confirm(
+      '账户注销后将永久删除您的所有数据，包括好友关系、消息记录、群组成员资格。此操作不可撤销！',
+      '确认注销账户',
+      { confirmButtonText: '确认注销', cancelButtonText: '取消', type: 'warning' }
+    )
+    await deleteAccount()
+    disconnectWebSocket()
+    userStore.logout()
+    ElMessage.success('账户已注销')
+    router.push('/login')
+  } catch (e) {
+    if (e !== 'cancel') {
+      // API error handled by interceptor
+    }
+  }
+}
+
+function onProfileUpdated() {
+  ElMessage.success('个人资料已更新')
 }
 
 async function subscribeAllGroups() {
@@ -285,6 +331,19 @@ onUnmounted(() => {
   font-size: 20px;
   font-weight: 600;
   backdrop-filter: blur(10px);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.3s ease;
+}
+
+.user-avatar:hover {
+  transform: scale(1.08);
+}
+
+.user-avatar .avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .user-details {

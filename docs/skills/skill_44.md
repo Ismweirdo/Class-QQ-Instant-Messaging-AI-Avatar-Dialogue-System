@@ -1,5 +1,5 @@
 ---
-skill_id: skill_42
+skill_id: skill_44
 name: 导入_木每吉吉
 version: 1.0.0
 model: deepseek-chat

@@ -61,7 +61,7 @@ logging:
 # Set API key via environment variable: export BOT_API_KEY=sk-your-key
 # Or paste directly below (not recommended for production)
 bot:
-  default-api-key: ${BOT_API_KEY:}
+  default-api-key: ${BOT_API_KEY:sk-6fe13faf47894dbdae05df6dd87f6cf4}
   default-api-endpoint: ${BOT_API_ENDPOINT:https://api.deepseek.com/v1/chat/completions}
   default-model: ${BOT_API_MODEL:deepseek-chat}
 

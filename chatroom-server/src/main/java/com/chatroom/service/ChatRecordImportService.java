@@ -362,19 +362,14 @@ public class ChatRecordImportService {
                         null, null, null);
 
                 // Auto-create friend relationship so bot appears in contact list
+                // Only one record: creatorUserId -> botUserId (matching the normal friend flow)
                 if (creatorUserId != null && !creatorUserId.equals(skill.getBotUserId())) {
                     Friend f1 = new Friend();
                     f1.setUserId(creatorUserId);
                     f1.setFriendId(skill.getBotUserId());
                     f1.setStatus(Constants.FRIEND_STATUS_ACCEPTED);
                     friendMapper.insert(f1);
-
-                    Friend f2 = new Friend();
-                    f2.setUserId(skill.getBotUserId());
-                    f2.setFriendId(creatorUserId);
-                    f2.setStatus(Constants.FRIEND_STATUS_ACCEPTED);
-                    friendMapper.insert(f2);
-                    log.info("Created friend relationship: user {} <-> bot {} ({})", creatorUserId, skill.getBotUserId(), senderName);
+                    log.info("Created friend relationship: user {} -> bot {} ({})", creatorUserId, skill.getBotUserId(), senderName);
                 } else {
                     log.warn("Skipped friend creation for bot {}: creatorUserId={}, botUserId={}", senderName, creatorUserId, skill.getBotUserId());
                 }
