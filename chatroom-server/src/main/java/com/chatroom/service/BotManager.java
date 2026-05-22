@@ -36,6 +36,7 @@ public class BotManager {
     private final FriendMapper friendMapper;
     private final LLMApiClient llmApiClient;
     private final BotSkillDocService botSkillDocService;
+    private final SkillFolderService skillFolderService;
     private final PasswordEncoder passwordEncoder;
     private final MessageService messageService;
     private final SimpMessagingTemplate messagingTemplate;
@@ -124,6 +125,34 @@ public class BotManager {
         result.put("skill", skill);
         result.put("botPassword", botPassword);
         result.put("botUserId", bot.getId());
+        return result;
+    }
+
+    /**
+     * Register a bot from a skill document (URL or file import).
+     * Uses the skill's system prompt as-is and defaults for other fields.
+     */
+    public Map<String, Object> registerBotFromSkill(String skillName, String systemPrompt,
+                                                     String model, String apiEndpoint,
+                                                     String apiKey, String description) {
+        String username = "skill_" + UUID.randomUUID().toString().substring(0, 8);
+        String nickname = skillName != null ? skillName : "SkillBot";
+        String botPassword = "BOT_" + UUID.randomUUID().toString().substring(0, 8);
+
+        Map<String, Object> result = registerBot(username, nickname, skillName,
+                systemPrompt != null ? systemPrompt : "",
+                "[]",
+                "{}",
+                "{}",
+                apiEndpoint, apiKey, model,
+                botPassword);
+
+        // Create skill folder and link it
+        BotSkill skill = (BotSkill) result.get("skill");
+        skillFolderService.createSkillFolder(skillName);
+        skill.setSkillFolder(skillName);
+        botSkillMapper.updateById(skill);
+
         return result;
     }
 
@@ -244,6 +273,19 @@ public class BotManager {
 
     private List<Map<String, String>> buildContext(Long botUserId, String senderName, String content) {
         List<Map<String, String>> messages = new ArrayList<>();
+
+        // Load full system prompt from skill folder
+        BotSkill skill = getBotSkill(botUserId);
+        if (skill != null && skill.getSkillFolder() != null && !skill.getSkillFolder().isBlank()) {
+            String folderPrompt = skillFolderService.buildSystemPrompt(skill.getSkillFolder());
+            if (!folderPrompt.isEmpty()) {
+                messages.add(Map.of("role", "system", "content", folderPrompt));
+            }
+        } else if (skill != null && skill.getSystemPrompt() != null && !skill.getSystemPrompt().isBlank()) {
+            // Fallback to old flat system prompt
+            messages.add(Map.of("role", "system", "content", skill.getSystemPrompt()));
+        }
+
         messages.add(Map.of("role", "user", "content", (senderName != null ? senderName : "用户") + "说: " + content));
         return messages;
     }
@@ -270,10 +312,13 @@ public class BotManager {
                 .eq(Friend::getUserId, botUserId)
                 .or().eq(Friend::getFriendId, botUserId));
 
-        // Delete bot skills
+        // Delete bot skills and their folders
         List<BotSkill> skills = botSkillMapper.selectList(new LambdaQueryWrapper<BotSkill>()
                 .eq(BotSkill::getBotUserId, botUserId));
         for (BotSkill skill : skills) {
+            if (skill.getSkillFolder() != null && !skill.getSkillFolder().isBlank()) {
+                skillFolderService.deleteSkillFolder(skill.getSkillFolder());
+            }
             botSkillDocService.deleteSkillDoc(skill);
         }
         botSkillMapper.delete(new LambdaQueryWrapper<BotSkill>()

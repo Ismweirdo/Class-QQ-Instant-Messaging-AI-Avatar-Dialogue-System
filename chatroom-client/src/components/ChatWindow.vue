@@ -25,6 +25,10 @@
             <el-option :value="120" label="2分钟" />
             <el-option :value="300" label="5分钟" />
           </el-select>
+          <button class="header-action-btn" @click="triggerCustomUpload" title="上传自定义 .md 文件个性化该 Bot">
+            <el-icon><DocumentAdd /></el-icon>
+          </button>
+          <input ref="customFileInput" type="file" accept=".md" style="display:none" @change="onCustomFileChange" />
         </template>
         <button class="header-action-btn">
           <el-icon><Phone /></el-icon>
@@ -94,9 +98,9 @@ import { useChatStore } from '../store/chat'
 import { useContactStore } from '../store/contact'
 import { sendChatMessage, subscribeGroupMessages, unsubscribeGroupMessages } from '../utils/websocket'
 import { recallMessage } from '../api/message'
-import { setActiveMode, getActiveMode } from '../api/bot'
+import { setActiveMode, getActiveMode, uploadCustomFile } from '../api/bot'
 import { ElMessage } from 'element-plus'
-import { Phone, VideoCamera, More, Close, Paperclip, Picture, ArrowRight } from '@element-plus/icons-vue'
+import { Phone, VideoCamera, More, Close, Paperclip, Picture, ArrowRight, DocumentAdd } from '@element-plus/icons-vue'
 import MessageBubble from './MessageBubble.vue'
 
 const props = defineProps({
@@ -189,6 +193,28 @@ async function onIntervalChange(val) {
     ElMessage.error('更新间隔失败')
   } finally {
     activeModeLoading.value = false
+  }
+}
+
+const customFileInput = ref(null)
+function triggerCustomUpload() {
+  customFileInput.value?.click()
+}
+async function onCustomFileChange(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  try {
+    const res = await uploadCustomFile(props.targetId, file)
+    if (res.code === 200) {
+      ElMessage.success(`已上传 ${file.name} 到 Bot 自定义规则`)
+    } else {
+      ElMessage.error(res.message || '上传失败')
+    }
+  } catch {
+    ElMessage.error('上传失败')
+  } finally {
+    // Reset input so same file can be re-uploaded
+    if (customFileInput.value) customFileInput.value.value = ''
   }
 }
 

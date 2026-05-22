@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ public class BotController {
     private final ChatRecordImportService chatRecordImportService;
     private final QQChatExporterClient qqChatExporterClient;
     private final SkillDocImportService skillDocImportService;
+    private final com.chatroom.service.SkillFolderService skillFolderService;
 
     @Value("${bot.default-api-endpoint:}")
     private String defaultApiEndpoint;
@@ -150,6 +152,60 @@ public class BotController {
             ));
         } catch (Exception e) {
             return Result.error(500, "导入失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/skills/import-url")
+    public Result<Map<String, Object>> importSkillFromUrl(@RequestBody Map<String, String> body) {
+        try {
+            String url = body.get("url");
+            if (url == null || url.isBlank()) {
+                return Result.error(400, "URL 不能为空");
+            }
+            BotSkill skill = skillDocImportService.importFromUrl(url.trim());
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("skillId", skill.getId());
+            data.put("botUserId", skill.getBotUserId());
+            data.put("skillName", skill.getSkillName());
+            data.put("botUsername", "skill_" + skill.getBotUserId());
+            return Result.ok(data);
+        } catch (Exception e) {
+            log.error("URL skill import failed", e);
+            return Result.error(500, "导入失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/skills/{botUserId}/files")
+    public Result<List<Map<String, Object>>> listSkillFiles(@PathVariable Long botUserId) {
+        List<BotSkill> skills = botManager.getAllBots().stream()
+                .filter(s -> s.getBotUserId().equals(botUserId))
+                .toList();
+        if (skills.isEmpty() || skills.get(0).getSkillFolder() == null) {
+            return Result.error(404, "Bot 没有关联的 skill 文件夹");
+        }
+        return Result.ok(skillFolderService.listFiles(skills.get(0).getSkillFolder()));
+    }
+
+    @PostMapping("/skills/{botUserId}/custom")
+    public Result<Map<String, Object>> uploadCustomFile(@PathVariable Long botUserId,
+                                                         @RequestParam("file") MultipartFile file) {
+        try {
+            List<BotSkill> skills = botManager.getAllBots().stream()
+                    .filter(s -> s.getBotUserId().equals(botUserId))
+                    .toList();
+            if (skills.isEmpty() || skills.get(0).getSkillFolder() == null) {
+                return Result.error(404, "Bot 没有关联的 skill 文件夹");
+            }
+            String folder = skills.get(0).getSkillFolder();
+            Path dest = skillFolderService.addCustomFile(folder,
+                    file.getOriginalFilename(), file.getBytes());
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("path", folder + "/custom/" + file.getOriginalFilename());
+            data.put("botUserId", botUserId);
+            return Result.ok(data);
+        } catch (Exception e) {
+            log.error("Custom file upload failed", e);
+            return Result.error(500, "上传失败: " + e.getMessage());
         }
     }
 

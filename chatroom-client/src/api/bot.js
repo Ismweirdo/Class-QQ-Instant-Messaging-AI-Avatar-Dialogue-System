@@ -59,6 +59,27 @@ export function qqImportBots(data, token) {
   return request.post('/bots/qq/import', data, { headers: qqceHeaders(token) })
 }
 
+// Skill import
+export function importSkillFromUrl(url) {
+  return request.post('/bots/skills/import-url', { url })
+}
+
+export function importSkillFile(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post('/bots/skills/import', formData)
+}
+
+export function listSkillFiles(botUserId) {
+  return request.get(`/bots/skills/${botUserId}/files`)
+}
+
+export function uploadCustomFile(botUserId, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post(`/bots/skills/${botUserId}/custom`, formData)
+}
+
 // Active mode
 export function setActiveMode(botUserId, enabled, intervalSeconds) {
   return request.put(`/bots/${botUserId}/active-mode`, { enabled, intervalSeconds })

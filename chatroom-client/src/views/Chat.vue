@@ -47,6 +47,9 @@
           <button class="action-btn" @click="showQQImport = true" title="从QQ导入聊天记录生成机器人">
             <el-icon><ChatDotSquare /></el-icon>
           </button>
+          <button class="action-btn" @click="showImportCharacter = true" title="从URL或文件导入人物Skill">
+            <el-icon><UserFilled /></el-icon>
+          </button>
         </div>
       </div>
       <ContactList @select="onSelectContact" @group-info="onGroupInfo" @refresh="refreshContacts" />
@@ -100,6 +103,9 @@
     <!-- QQ Import Dialog -->
     <QQImportDialog v-model:visible="showQQImport" @done="onBotsImported" />
 
+    <!-- Import Character Dialog -->
+    <ImportCharacterDialog v-model:visible="showImportCharacter" @imported="onBotsImported" />
+
     <!-- Group Info Dialog -->
     <GroupInfoDialog v-model:visible="showGroupInfo" :group="selectedGroup" @refresh="refreshContacts" />
 
@@ -129,6 +135,7 @@ import CreateGroupDialog from '../components/CreateGroupDialog.vue'
 import GroupInfoDialog from '../components/GroupInfoDialog.vue'
 import ImportBotsDialog from '../components/ImportBotsDialog.vue'
 import QQImportDialog from '../components/QQImportDialog.vue'
+import ImportCharacterDialog from '../components/ImportCharacterDialog.vue'
 import ProfileDialog from '../components/ProfileDialog.vue'
 import BackgroundSettings from '../components/BackgroundSettings.vue'
 
@@ -141,6 +148,7 @@ const showAddFriend = ref(false)
 const showCreateGroup = ref(false)
 const showImportBots = ref(false)
 const showQQImport = ref(false)
+const showImportCharacter = ref(false)
 const showFriendRequests = ref(false)
 const showGroupInfo = ref(false)
 const showProfile = ref(false)

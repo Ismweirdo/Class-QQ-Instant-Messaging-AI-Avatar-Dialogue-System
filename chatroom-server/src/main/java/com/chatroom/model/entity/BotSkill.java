@@ -11,6 +11,7 @@ public class BotSkill {
     private Long id;
     private Long botUserId;
     private String skillName;
+    private String skillFolder;
     private String emotionProfileJson;
     private String languageStyleJson;
     private String systemPrompt;

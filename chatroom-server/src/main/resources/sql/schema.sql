@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS bot_skills (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     bot_user_id BIGINT NOT NULL,
     skill_name VARCHAR(100),
+    skill_folder VARCHAR(255),
     emotion_profile_json TEXT,
     language_style_json TEXT,
     system_prompt TEXT,
