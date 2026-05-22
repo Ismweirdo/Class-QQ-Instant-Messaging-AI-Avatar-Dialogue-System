@@ -11,5 +11,7 @@ public interface GroupService {
     void addMember(Long groupId, Long operatorId, Long userId);
     void removeMember(Long groupId, Long operatorId, Long userId);
     void quitGroup(Long groupId, Long userId);
+    void disbandGroup(Long groupId, Long userId);
     void updateGroupInfo(Long groupId, Long userId, String name, String announcement);
+    List<java.util.Map<String, Object>> getMembers(Long groupId);
 }

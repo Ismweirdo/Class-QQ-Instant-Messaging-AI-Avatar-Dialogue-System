@@ -10,4 +10,5 @@ public interface FriendService {
     void deleteFriend(Long userId, Long friendId);
     List<FriendVO> getFriendList(Long userId);
     List<FriendVO> getPendingRequests(Long userId);
+    void setRemark(Long userId, Long friendId, String remark);
 }

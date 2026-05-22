@@ -5,10 +5,13 @@
         <el-input v-model="form.name" placeholder="请输入群名称" maxlength="100" />
       </el-form-item>
       <el-form-item label="选择成员">
-        <el-select v-model="form.memberIds" multiple filterable placeholder="搜索并选择好友"
+        <el-select v-model="form.memberIds" multiple filterable placeholder="搜索并选择好友（建议加入机器人让群更活跃）"
           style="width:100%">
           <el-option v-for="f in contactStore.friendList" :key="f.friendId"
-            :label="f.nickname || f.username" :value="f.friendId" />
+            :label="(f.nickname || f.username) + (f.isBot ? ' [Bot]' : '')" :value="f.friendId">
+            <span>{{ f.nickname || f.username }}</span>
+            <el-tag v-if="f.isBot" size="small" type="success" style="margin-left:8px">Bot</el-tag>
+          </el-option>
         </el-select>
       </el-form-item>
     </el-form>

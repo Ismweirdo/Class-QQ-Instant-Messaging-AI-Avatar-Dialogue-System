@@ -5,23 +5,30 @@ spring:
   application:
     name: chatroom-server
 
-  # H2 demo database
-  datasource:
-    driver-class-name: org.h2.Driver
-    url: jdbc:h2:file:./data/chatroom;DB_CLOSE_DELAY=-1;MODE=MySQL
-    username: sa
-    password:
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
+  # Redis enabled via Docker (docker.m.daocloud.io/library/redis:7-alpine)
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 100
+          max-idle: 50
+          min-idle: 10
 
-  # Switch to MySQL for production:
-  # datasource:
-  #   driver-class-name: com.mysql.cj.jdbc.Driver
-  #   url: jdbc:mysql://localhost:3306/chatroom?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8
-  #   username: root
-  #   password: root
+  # MySQL database (production / stress testing)
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/chatroom?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true
+    username: root
+    password: ${MYSQL_PASSWORD:123456}
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 10000
+      idle-timeout: 300000
+      max-lifetime: 600000
 
   sql:
     init:
@@ -64,6 +71,15 @@ bot:
   default-api-key: ${BOT_API_KEY:}
   default-api-endpoint: ${BOT_API_ENDPOINT:https://api.deepseek.com/v1/chat/completions}
   default-model: ${BOT_API_MODEL:deepseek-chat}
+  queue:
+    max-size: 200
+    poll-timeout-ms: 3000
+  memory:
+    cache-ttl-minutes: 60
+    work-ttl-minutes: 30
 
 qqce:
   access-token: ${QQCE_ACCESS_TOKEN:}
+
+github:
+  token: ${GITHUB_TOKEN:}

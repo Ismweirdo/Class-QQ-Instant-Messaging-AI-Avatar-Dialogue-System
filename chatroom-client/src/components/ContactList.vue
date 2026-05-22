@@ -19,49 +19,42 @@
 
     <!-- Tabs -->
     <el-tabs v-model="activeTab" class="contact-tabs">
-      <el-tab-pane label="好友" name="friends">
-        <div v-if="normalFriends.length === 0" class="empty-hint">
+      <el-tab-pane label="机器人" name="bots">
+        <div v-if="botFriends.length === 0" class="empty-hint">
           <div class="empty-hint-icon">
             <el-icon :size="28" color="var(--text-muted)"><User /></el-icon>
           </div>
-          <div class="empty-hint-title">暂无好友</div>
-          <div class="empty-hint-desc">点击 + 按钮添加好友</div>
+          <div class="empty-hint-title">暂无机器人</div>
+          <div class="empty-hint-desc">导入聊天记录生成机器人</div>
         </div>
-        <template v-for="friend in normalFriends" :key="friend.friendId">
-          <!-- Normal mode: right-click context menu -->
+        <template v-for="bot in botFriends" :key="bot.friendId">
           <el-dropdown v-if="!batchMode" trigger="contextmenu" :hide-on-click="false">
-            <div class="contact-item" :class="{ active: isActive('private', friend.friendId) }"
-              @click="selectContact('private', friend.friendId, friend.nickname || friend.username)">
+            <div class="contact-item" :class="{ active: isActive('private', bot.friendId) }"
+              @click="selectContact('private', bot.friendId, displayName(bot))">
               <div class="avatar-wrapper">
-                <el-avatar class="contact-avatar">{{ (friend.nickname || friend.username)[0] }}</el-avatar>
-                <div class="status-badge" :class="{ online: friend.status === 1, offline: friend.status !== 1 }"></div>
+                <el-avatar class="contact-avatar" :src="bot.avatar || undefined">{{ displayName(bot)[0] }}</el-avatar>
               </div>
               <div class="contact-info">
-                <div class="contact-name">{{ friend.nickname || friend.username }}</div>
-                <div class="contact-status">
-                  <span v-if="friend.status === 1" style="color: #22c55e">在线</span>
-                  <span v-else>离线</span>
-                </div>
+                <div class="contact-name">{{ displayName(bot) }}</div>
+                <div class="contact-status">AI 机器人</div>
               </div>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="handleDeleteFriend(friend)">删除好友</el-dropdown-item>
+                <el-dropdown-item @click="handleSetRemark(bot)">设置备注</el-dropdown-item>
+                <el-dropdown-item @click="handleDeleteBot(bot)">彻底删除</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-
-          <!-- Batch mode: checkboxes -->
-          <div v-else class="contact-item batch-item" :class="{ 'batch-selected': selectedIds.includes(friend.friendId) }"
-            @click="toggleSelect(friend.friendId)">
-            <el-checkbox :model-value="selectedIds.includes(friend.friendId)" @click.stop />
+          <div v-else class="contact-item batch-item" :class="{ 'batch-selected': selectedIds.includes(bot.friendId) }"
+            @click="toggleSelect(bot.friendId)">
+            <el-checkbox :model-value="selectedIds.includes(bot.friendId)" @click.stop />
             <div class="avatar-wrapper">
-              <el-avatar class="contact-avatar">{{ (friend.nickname || friend.username)[0] }}</el-avatar>
-              <div class="status-badge" :class="{ online: friend.status === 1, offline: friend.status !== 1 }"></div>
+              <el-avatar class="contact-avatar" :src="bot.avatar || undefined">{{ displayName(bot)[0] }}</el-avatar>
             </div>
             <div class="contact-info">
-              <div class="contact-name">{{ friend.nickname || friend.username }}</div>
-              <div class="contact-status">{{ friend.status === 1 ? '在线' : '离线' }}</div>
+              <div class="contact-name">{{ displayName(bot) }}</div>
+              <div class="contact-status">AI 机器人</div>
             </div>
           </div>
         </template>
@@ -93,49 +86,6 @@
           </div>
         </div>
       </el-tab-pane>
-
-      <el-tab-pane label="机器人" name="bots">
-        <div v-if="botFriends.length === 0" class="empty-hint">
-          <div class="empty-hint-icon">
-            <el-icon :size="28" color="var(--text-muted)"><User /></el-icon>
-          </div>
-          <div class="empty-hint-title">暂无机器人</div>
-          <div class="empty-hint-desc">导入聊天记录生成机器人</div>
-        </div>
-        <template v-for="bot in botFriends" :key="bot.friendId">
-          <!-- Normal mode: right-click context menu -->
-          <el-dropdown v-if="!batchMode" trigger="contextmenu" :hide-on-click="false">
-            <div class="contact-item" :class="{ active: isActive('private', bot.friendId) }"
-              @click="selectContact('private', bot.friendId, bot.nickname || bot.username)">
-              <div class="avatar-wrapper">
-                <el-avatar class="contact-avatar" :src="bot.avatar">{{ (bot.nickname || bot.username)[0] }}</el-avatar>
-              </div>
-              <div class="contact-info">
-                <div class="contact-name">{{ bot.nickname || bot.username }}</div>
-                <div class="contact-status">AI 机器人</div>
-              </div>
-            </div>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="handleDeleteBot(bot)">彻底删除</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-
-          <!-- Batch mode: checkboxes -->
-          <div v-else class="contact-item batch-item" :class="{ 'batch-selected': selectedIds.includes(bot.friendId) }"
-            @click="toggleSelect(bot.friendId)">
-            <el-checkbox :model-value="selectedIds.includes(bot.friendId)" @click.stop />
-            <div class="avatar-wrapper">
-              <el-avatar class="contact-avatar" :src="bot.avatar">{{ (bot.nickname || bot.username)[0] }}</el-avatar>
-            </div>
-            <div class="contact-info">
-              <div class="contact-name">{{ bot.nickname || bot.username }}</div>
-              <div class="contact-status">AI 机器人</div>
-            </div>
-          </div>
-        </template>
-      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -143,7 +93,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useContactStore } from '../store/contact'
-import { deleteFriend } from '../api/friend'
+import { deleteFriend, setRemark } from '../api/friend'
 import { deleteBot } from '../api/bot'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { User, Message } from '@element-plus/icons-vue'
@@ -151,18 +101,24 @@ import { User, Message } from '@element-plus/icons-vue'
 const emit = defineEmits(['select', 'groupInfo', 'refresh'])
 const contactStore = useContactStore()
 const search = ref('')
-const activeTab = ref('friends')
+const activeTab = ref('bots')
 
 const batchMode = ref(false)
 const selectedIds = ref([])
 const deleting = ref(false)
+
+function displayName(friend) {
+  return friend.remark || friend.nickname || friend.username
+}
 
 // Filter friends by tab
 const normalFriends = computed(() => {
   let list = contactStore.friendList.filter(f => f.isBot !== 1)
   if (search.value) {
     const kw = search.value.toLowerCase()
-    list = list.filter(f => (f.nickname || f.username).toLowerCase().includes(kw))
+    list = list.filter(f =>
+      displayName(f).toLowerCase().includes(kw) ||
+      (f.remark && f.remark.toLowerCase().includes(kw)))
   }
   return list
 })
@@ -171,7 +127,9 @@ const botFriends = computed(() => {
   let list = contactStore.friendList.filter(f => f.isBot === 1)
   if (search.value) {
     const kw = search.value.toLowerCase()
-    list = list.filter(f => (f.nickname || f.username).toLowerCase().includes(kw))
+    list = list.filter(f =>
+      displayName(f).toLowerCase().includes(kw) ||
+      (f.remark && f.remark.toLowerCase().includes(kw)))
   }
   return list
 })
@@ -216,10 +174,38 @@ function toggleSelect(friendId) {
 
 // --- Single friend delete (remove relationship only) ---
 
+async function handleSetRemark(friend) {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `为 "${displayName(friend)}" 设置备注`,
+      '设置备注',
+      {
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+        inputValue: friend.remark || '',
+        inputPlaceholder: '输入备注名称（留空则清除备注）'
+      }
+    )
+    if (value !== undefined && value !== null) {
+      const remark = value.trim()
+      await setRemark(friend.friendId, remark)
+      friend.remark = remark || null
+      ElMessage.success(remark ? '备注已保存' : '备注已清除')
+      // Update active contact name if this friend is currently active
+      const active = contactStore.activeContact
+      if (active && active.type === 'private' && active.id === friend.friendId) {
+        contactStore.setActiveContact({ ...active, name: displayName(friend) })
+      }
+    }
+  } catch {
+    // User cancelled
+  }
+}
+
 async function handleDeleteFriend(friend) {
   try {
     await ElMessageBox.confirm(
-      `确定要删除好友 "${friend.nickname || friend.username}" 吗？`,
+      `确定要删除好友 "${displayName(friend)}" 吗？`,
       '确认删除',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     )
@@ -237,7 +223,7 @@ async function handleDeleteFriend(friend) {
 async function handleDeleteBot(bot) {
   try {
     await ElMessageBox.confirm(
-      `确定要彻底删除机器人 "${bot.nickname || bot.username}" 吗？此操作不可恢复。`,
+      `确定要彻底删除机器人 "${displayName(bot)}" 吗？此操作不可恢复。`,
       '确认删除',
       { type: 'warning', confirmButtonText: '彻底删除', cancelButtonText: '取消' }
     )

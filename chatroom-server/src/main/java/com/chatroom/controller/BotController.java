@@ -1,6 +1,7 @@
 package com.chatroom.controller;
 
 import com.chatroom.common.Result;
+import com.chatroom.common.Constants;
 import com.chatroom.model.entity.BotSkill;
 import com.chatroom.security.SecurityUtil;
 import com.chatroom.service.BotManager;
@@ -14,10 +15,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 @RestController
@@ -31,6 +34,13 @@ public class BotController {
     private final QQChatExporterClient qqChatExporterClient;
     private final SkillDocImportService skillDocImportService;
     private final com.chatroom.service.SkillFolderService skillFolderService;
+    private final com.chatroom.service.FriendService friendService;
+    private final com.chatroom.service.BotBenchmarkService benchmarkService;
+    private final com.chatroom.service.AiProviderPresetService providerService;
+    private final com.chatroom.service.LongTermMemoryService ltmService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.chatroom.service.ConversationMemoryCache memoryCache;
+    private final com.chatroom.service.MessageService messageService;
 
     @Value("${bot.default-api-endpoint:}")
     private String defaultApiEndpoint;
@@ -55,6 +65,93 @@ public class BotController {
         ));
     }
 
+    // ==================== AI Provider ====================
+
+    @GetMapping("/providers")
+    public Result<List<Map<String, Object>>> listProviders() {
+        return Result.ok(providerService.getProviderOptions());
+    }
+
+    @GetMapping("/{botUserId}/provider-config")
+    public Result<Map<String, Object>> getProviderConfig(@PathVariable Long botUserId) {
+        com.chatroom.model.entity.BotSkill skill = botManager.getBotSkill(botUserId);
+        if (skill == null) {
+            return Result.error(404, "Bot not found");
+        }
+
+        // Find matching preset provider by endpoint
+        String matchedProvider = "custom";
+        var providers = providerService.getAllProviders();
+        for (var p : providers) {
+            if (p.defaultEndpoint().equals(skill.getApiEndpoint())) {
+                matchedProvider = p.id();
+                break;
+            }
+        }
+
+        boolean hasKey = skill.getApiKey() != null && !skill.getApiKey().isBlank();
+        String maskedKey = "";
+        if (hasKey && skill.getApiKey().length() > 8) {
+            maskedKey = skill.getApiKey().substring(0, 8) + "..." + skill.getApiKey().substring(skill.getApiKey().length() - 4);
+        }
+        String avatar = botManager.getBotAvatar(botUserId);
+
+        return Result.ok(Map.of(
+            "providerId", matchedProvider,
+            "apiEndpoint", skill.getApiEndpoint(),
+            "apiKeyConfigured", hasKey,
+            "apiKeyPreview", maskedKey,
+            "model", skill.getModel() != null ? skill.getModel() : "",
+            "ragEnabled", skill.getRagEnabled() != null && skill.getRagEnabled() == 1,
+            "ragTopK", skill.getRagTopK() != null ? skill.getRagTopK() : 3,
+            "avatar", avatar
+        ));
+    }
+
+    @PutMapping("/{botUserId}/provider-config")
+    public Result<Map<String, Object>> updateProviderConfig(
+            @PathVariable Long botUserId,
+            @RequestBody Map<String, String> body) {
+        com.chatroom.model.entity.BotSkill skill = botManager.getBotSkill(botUserId);
+        if (skill == null) {
+            return Result.error(404, "Bot not found");
+        }
+
+        String providerId = body.get("providerId");
+        String apiEndpoint = body.get("apiEndpoint");
+        String apiKey = body.get("apiKey");
+        String model = body.get("model");
+
+        // If providerId specified and not "custom", use preset endpoint
+        if (providerId != null && !providerId.isBlank() && !"custom".equals(providerId)) {
+            var preset = providerService.getProvider(providerId);
+            if (preset.isPresent()) {
+                skill.setApiEndpoint(preset.get().defaultEndpoint());
+                if (model == null || model.isBlank()) {
+                    model = preset.get().defaultModel();
+                }
+            }
+        } else if (apiEndpoint != null && !apiEndpoint.isBlank()) {
+            skill.setApiEndpoint(apiEndpoint);
+        }
+
+        if (apiKey != null && !apiKey.isBlank()) {
+            skill.setApiKey(apiKey);
+        }
+        if (model != null && !model.isBlank()) {
+            skill.setModel(model);
+        }
+
+        botManager.updateBotSkill(skill);
+
+        return Result.ok(Map.of(
+            "botUserId", botUserId,
+            "apiEndpoint", skill.getApiEndpoint(),
+            "apiKeyConfigured", skill.getApiKey() != null && !skill.getApiKey().isBlank(),
+            "model", skill.getModel()
+        ));
+    }
+
     @PostMapping("/register")
     public Result<Map<String, Object>> register(@RequestBody Map<String, String> body) {
         Map<String, Object> result = botManager.registerBot(
@@ -68,8 +165,23 @@ public class BotController {
                 body.get("apiEndpoint"),
                 body.get("apiKey"),
                 body.get("model"),
-                body.get("password"));
+                body.get("password"),
+                parseIntOrNull(body.get("maxTokens")),
+                parseDoubleOrNull(body.get("temperature")),
+                body.get("conversationMode"),
+                parseIntOrNull(body.get("memorySize")),
+                parseIntOrNull(body.get("ragEnabled")),
+                parseIntOrNull(body.get("ragTopK")));
         return Result.ok(result);
+    }
+
+    private Integer parseIntOrNull(String s) {
+        if (s == null || s.isBlank()) return null;
+        try { return Integer.parseInt(s); } catch (NumberFormatException e) { return null; }
+    }
+    private Double parseDoubleOrNull(String s) {
+        if (s == null || s.isBlank()) return null;
+        try { return Double.parseDouble(s); } catch (NumberFormatException e) { return null; }
     }
 
     @DeleteMapping("/{userId}")
@@ -91,6 +203,179 @@ public class BotController {
     @GetMapping("/count")
     public Result<Integer> count() {
         return Result.ok(botManager.getOnlineBotCount());
+    }
+
+    @GetMapping("/list-simple")
+    public Result<List<Map<String, Object>>> listSimple() {
+        return Result.ok(botManager.getBotsSimple());
+    }
+
+    @GetMapping("/queue-stats")
+    public Result<Map<String, Object>> queueStats() {
+        return Result.ok(botManager.getQueueStats());
+    }
+
+    @GetMapping("/health")
+    public Result<Map<String, Object>> health() {
+        Map<String, Object> info = new java.util.LinkedHashMap<>();
+        info.put("bots", botManager.getAllBots().size());
+        info.put("activeBots", botManager.getActiveBots().size());
+        try {
+            info.put("queueStats", botManager.getQueueStats());
+        } catch (Exception e) {
+            info.put("queueStats", Map.of("error", e.getClass().getSimpleName() + ": " + e.getMessage()));
+        }
+        return Result.ok(info);
+    }
+
+    // ==================== Benchmark ====================
+
+    @PostMapping("/{botUserId}/benchmark")
+    public Result<Map<String, Object>> benchmark(@PathVariable Long botUserId,
+                                                  @RequestBody Map<String, Object> body) {
+        Long senderId = SecurityUtil.getCurrentUserId();
+        String senderName = (String) body.getOrDefault("senderName", "测试用户");
+        int messageCount = body.get("messageCount") instanceof Number n ? n.intValue() : 10;
+        int concurrency = body.get("concurrency") instanceof Number n ? n.intValue() : 2;
+        Map<String, Object> result = benchmarkService.runBenchmark(
+                botUserId, senderId, senderName, messageCount, concurrency);
+        return Result.ok(result);
+    }
+
+    @GetMapping("/{botUserId}/benchmark/quick")
+    public Result<Map<String, Object>> quickBenchmark(@PathVariable Long botUserId) {
+        Long senderId = SecurityUtil.getCurrentUserId();
+        return Result.ok(benchmarkService.runQuickBenchmark(botUserId, senderId));
+    }
+
+    // ==================== RAG Memory ====================
+
+    @PutMapping("/{botUserId}/rag-config")
+    public Result<Map<String, Object>> updateRagConfig(
+            @PathVariable Long botUserId,
+            @RequestBody Map<String, Object> body) {
+        com.chatroom.model.entity.BotSkill skill = botManager.getBotSkill(botUserId);
+        if (skill == null) {
+            return Result.error(404, "Bot not found");
+        }
+        if (body.containsKey("ragEnabled")) {
+            skill.setRagEnabled(Boolean.TRUE.equals(body.get("ragEnabled")) ? 1 : 0);
+        }
+        if (body.containsKey("ragTopK")) {
+            skill.setRagTopK(body.get("ragTopK") instanceof Number n ? n.intValue() : 3);
+        }
+        botManager.updateBotSkill(skill);
+        return Result.ok(Map.of(
+            "botUserId", botUserId,
+            "ragEnabled", skill.getRagEnabled() == 1,
+            "ragTopK", skill.getRagTopK()
+        ));
+    }
+
+    @PostMapping("/{botUserId}/avatar")
+    public Result<Map<String, Object>> uploadBotAvatar(@PathVariable Long botUserId,
+                                                         @RequestParam("file") MultipartFile file) {
+        try {
+            String contentType = file.getContentType();
+            if (contentType == null || !contentType.startsWith("image/")) {
+                return Result.error(400, "只能上传图片文件");
+            }
+            if (file.getSize() > 5 * 1024 * 1024) {
+                return Result.error(400, "文件大小不能超过5MB");
+            }
+            String ext = ".png";
+            String original = file.getOriginalFilename();
+            if (original != null && original.contains(".")) {
+                ext = original.substring(original.lastIndexOf("."));
+            }
+            String filename = "bot_" + botUserId + "_" + UUID.randomUUID().toString().substring(0, 8) + ext;
+            Path dir = Path.of("./data/avatars");
+            Files.createDirectories(dir);
+            file.transferTo(dir.resolve(filename));
+
+            String avatarUrl = "/avatars/" + filename;
+            botManager.updateBotAvatar(botUserId, avatarUrl);
+
+            return Result.ok(Map.of("botUserId", botUserId, "avatar", avatarUrl));
+        } catch (Exception e) {
+            return Result.error(500, "上传失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/{botUserId}/rag-stats")
+    public Result<Map<String, Object>> ragStats(@PathVariable Long botUserId) {
+        return Result.ok(botManager.getRagStats(botUserId));
+    }
+
+    @DeleteMapping("/{botUserId}/rag-memory")
+    public Result<String> clearRagMemory(@PathVariable Long botUserId) {
+        botManager.clearRagMemory(botUserId);
+        return Result.ok("RAG memory cleared");
+    }
+
+    // ==================== Long-Term Memory ====================
+
+    @GetMapping("/{botUserId}/long-term-memory")
+    public Result<Map<String, Object>> getLongTermMemory(@PathVariable Long botUserId) {
+        Long userId = SecurityUtil.getCurrentUserId();
+        List<Map<String, Object>> entries = ltmService.getMemories(botUserId, userId, 50);
+        Map<String, Object> stats = ltmService.getStats(botUserId);
+        return Result.ok(Map.of(
+            "botUserId", botUserId,
+            "entries", entries,
+            "count", entries.size(),
+            "stats", stats
+        ));
+    }
+
+    @DeleteMapping("/{botUserId}/long-term-memory")
+    public Result<String> clearLongTermMemory(@PathVariable Long botUserId) {
+        Long userId = SecurityUtil.getCurrentUserId();
+        ltmService.clearMemory(botUserId, userId);
+        return Result.ok("Long-term memory cleared");
+    }
+
+    @PostMapping("/{botUserId}/consolidate")
+    public Result<Map<String, Object>> consolidateMemory(@PathVariable Long botUserId) {
+        Long userId = SecurityUtil.getCurrentUserId();
+        com.chatroom.model.entity.BotSkill skill = botManager.getBotSkill(botUserId);
+        if (skill == null) {
+            return Result.error(404, "Bot not found");
+        }
+
+        // Collect short-term memory for consolidation
+        List<Map<String, String>> shortTerm = List.of();
+        if (memoryCache != null) {
+            shortTerm = memoryCache.getMemory(botUserId, userId, Constants.BOT_SHORT_TERM_MAX);
+        }
+        if (shortTerm.isEmpty()) {
+            // Fallback to DB
+            List<com.chatroom.model.vo.MessageVO> history = messageService.getRecentMessages(botUserId, userId, Constants.BOT_SHORT_TERM_MAX);
+            shortTerm = history.stream()
+                .map(msg -> {
+                    String role = msg.getSenderId().equals(botUserId) ? "assistant" : "user";
+                    String prefix = role.equals("user")
+                            ? (msg.getSenderName() != null ? msg.getSenderName() : "用户") + "说: "
+                            : "";
+                    return (Map<String, String>) Map.of("role", role, "content", prefix + msg.getContent());
+                })
+                .toList();
+        }
+
+        if (shortTerm.size() < 5) {
+            return Result.error(400, "对话消息不足 (至少需要5条)，无法整理记忆");
+        }
+
+        // Run consolidation synchronously for manual trigger
+        ltmService.consolidateFromMessages(botUserId, userId, shortTerm,
+                skill.getApiEndpoint(), skill.getApiKey(), skill.getModel());
+
+        Map<String, Object> stats = ltmService.getStats(botUserId);
+        return Result.ok(Map.of(
+            "botUserId", botUserId,
+            "messagesConsolidated", shortTerm.size(),
+            "stats", stats
+        ));
     }
 
     // ==================== Active Mode ====================
@@ -155,6 +440,48 @@ public class BotController {
         }
     }
 
+    @PutMapping("/{botUserId}/skill")
+    public Result<Map<String, Object>> updateSkill(@PathVariable Long botUserId,
+                                                    @RequestParam("file") MultipartFile file) {
+        try {
+            BotSkill skill = skillDocImportService.importSkillForExistingBot(botUserId, file);
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("skillId", skill.getId());
+            data.put("botUserId", skill.getBotUserId());
+            data.put("skillName", skill.getSkillName());
+            data.put("conversationMode", skill.getConversationMode());
+            return Result.ok(data);
+        } catch (IllegalArgumentException e) {
+            return Result.error(404, e.getMessage());
+        } catch (Exception e) {
+            log.error("Bot skill update failed", e);
+            return Result.error(500, "更新失败: " + e.getMessage());
+        }
+    }
+
+    @PutMapping("/{botUserId}/skill/text")
+    public Result<Map<String, Object>> updateSkillFromText(@PathVariable Long botUserId,
+                                                            @RequestBody Map<String, String> body) {
+        try {
+            String content = body.get("content");
+            if (content == null || content.isBlank()) {
+                return Result.error(400, "内容不能为空");
+            }
+            BotSkill skill = skillDocImportService.importTextForExistingBot(botUserId, content.trim());
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("skillId", skill.getId());
+            data.put("botUserId", skill.getBotUserId());
+            data.put("skillName", skill.getSkillName());
+            data.put("conversationMode", skill.getConversationMode() != null ? skill.getConversationMode() : "");
+            return Result.ok(data);
+        } catch (IllegalArgumentException e) {
+            return Result.error(404, e.getMessage());
+        } catch (Exception e) {
+            log.error("Bot skill text update failed: {}", e.getMessage(), e);
+            return Result.error(500, "更新失败: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+        }
+    }
+
     @PostMapping("/skills/import-url")
     public Result<Map<String, Object>> importSkillFromUrl(@RequestBody Map<String, String> body) {
         try {
@@ -163,6 +490,12 @@ public class BotController {
                 return Result.error(400, "URL 不能为空");
             }
             BotSkill skill = skillDocImportService.importFromUrl(url.trim());
+            // Auto-add the bot as friend for the importer
+            try {
+                friendService.sendFriendRequest(SecurityUtil.getCurrentUserId(), skill.getBotUserId(), "hi");
+            } catch (Exception e) {
+                log.debug("Friend auto-add skipped: {}", e.getMessage());
+            }
             Map<String, Object> data = new java.util.LinkedHashMap<>();
             data.put("skillId", skill.getId());
             data.put("botUserId", skill.getBotUserId());

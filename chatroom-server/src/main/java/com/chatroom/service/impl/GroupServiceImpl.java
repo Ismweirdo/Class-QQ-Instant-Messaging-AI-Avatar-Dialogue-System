@@ -25,6 +25,7 @@ public class GroupServiceImpl implements GroupService {
     private final GroupMapper groupMapper;
     private final GroupMemberMapper groupMemberMapper;
     private final UserMapper userMapper;
+    private final com.chatroom.mapper.MessageMapper messageMapper;
 
     @Override
     @Transactional
@@ -170,6 +171,29 @@ public class GroupServiceImpl implements GroupService {
     }
 
     @Override
+    @Transactional
+    public void disbandGroup(Long groupId, Long userId) {
+        if (!isOwner(groupId, userId)) {
+            throw new RuntimeException("只有群主才能解散群组");
+        }
+
+        // 1. Delete all group members
+        LambdaQueryWrapper<GroupMember> memberWrapper = new LambdaQueryWrapper<>();
+        memberWrapper.eq(GroupMember::getGroupId, groupId);
+        groupMemberMapper.delete(memberWrapper);
+
+        // 2. Delete all group messages
+        LambdaQueryWrapper<com.chatroom.model.entity.Message> msgWrapper =
+            new LambdaQueryWrapper<>();
+        msgWrapper.eq(com.chatroom.model.entity.Message::getMessageType, Constants.MSG_TYPE_GROUP)
+                  .eq(com.chatroom.model.entity.Message::getTargetId, groupId);
+        messageMapper.delete(msgWrapper);
+
+        // 3. Delete the group itself
+        groupMapper.deleteById(groupId);
+    }
+
+    @Override
     public void updateGroupInfo(Long groupId, Long userId, String name, String announcement) {
         checkOwnershipOrAdmin(groupId, userId);
 
@@ -198,5 +222,26 @@ public class GroupServiceImpl implements GroupService {
     private boolean isOwner(Long groupId, Long userId) {
         Group group = groupMapper.selectById(groupId);
         return group != null && group.getOwnerId().equals(userId);
+    }
+
+    @Override
+    public List<java.util.Map<String, Object>> getMembers(Long groupId) {
+        List<GroupMember> members = groupMemberMapper.selectList(
+            new LambdaQueryWrapper<GroupMember>().eq(GroupMember::getGroupId, groupId));
+        List<java.util.Map<String, Object>> result = new ArrayList<>();
+        for (GroupMember gm : members) {
+            User user = userMapper.selectById(gm.getUserId());
+            if (user != null) {
+                result.add(java.util.Map.of(
+                    "userId", gm.getUserId(),
+                    "nickname", user.getNickname() != null ? user.getNickname() : user.getUsername(),
+                    "username", user.getUsername(),
+                    "avatar", user.getAvatar() != null ? user.getAvatar() : "",
+                    "isBot", user.getIsBot() != null ? user.getIsBot() : 0,
+                    "role", gm.getRole()
+                ));
+            }
+        }
+        return result;
     }
 }

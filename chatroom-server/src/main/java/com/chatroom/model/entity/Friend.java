@@ -12,6 +12,7 @@ public class Friend {
     private Long userId;
     private Long friendId;
     private Integer status;
+    private String remark;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 }

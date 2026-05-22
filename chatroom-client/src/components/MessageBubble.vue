@@ -1,7 +1,7 @@
 <template>
   <div class="message-wrapper" :class="{ mine: isMine }">
     <div class="message-avatar" v-if="!isMine">
-      <el-avatar>{{ (message.senderName || '?')[0] }}</el-avatar>
+      <el-avatar :src="message.senderAvatar || undefined">{{ (message.senderName || '?')[0] }}</el-avatar>
     </div>
     <div class="message-body">
       <div class="message-sender" v-if="!isMine">{{ message.senderName }}</div>
@@ -11,7 +11,20 @@
         <span class="reply-content">{{ truncate(message.replyToContent, 50) }}</span>
       </div>
       <div class="message-bubble">
-        <div class="message-text">{{ message.content }}</div>
+        <!-- Image preview -->
+        <div v-if="message.contentType === 1" class="message-image">
+          <el-image :src="extractImageUrl(message.content)" :preview-src-list="[extractImageUrl(message.content)]"
+            fit="cover" style="max-width:240px;max-height:320px;border-radius:12px;cursor:pointer" />
+        </div>
+        <!-- File download -->
+        <div v-else-if="message.contentType === 2" class="message-file">
+          <a :href="extractFileUrl(message.content)" target="_blank" class="file-link">
+            <el-icon :size="20"><Document /></el-icon>
+            <span class="file-name">{{ extractFileName(message.content) }}</span>
+            <el-icon :size="14"><Download /></el-icon>
+          </a>
+        </div>
+        <div v-if="message.contentType !== 1" class="message-text" v-html="highlightMentions(message.content)"></div>
         <div class="message-meta">
           <span class="message-time">{{ formatTime(message.createdAt) }}</span>
           <span v-if="isMine" class="message-status">
@@ -22,25 +35,40 @@
       <!-- Actions on hover -->
       <div class="message-actions">
         <button class="action-btn reply" @click="$emit('reply', message)">回复</button>
-        <button v-if="isMine && isRecalled(message)" class="action-btn recall"
+        <button v-if="isMine && isRecallable(message)" class="action-btn recall"
           @click="$emit('recall', message)">撤回</button>
+        <button v-if="isMine" class="action-btn del"
+          @click="$emit('deleteMsg', message)">删除</button>
       </div>
     </div>
     <div class="message-avatar" v-if="isMine">
-      <el-avatar>{{ (message.senderName || '?')[0] }}</el-avatar>
+      <el-avatar :src="message.senderAvatar || undefined">{{ (message.senderName || '?')[0] }}</el-avatar>
     </div>
   </div>
 </template>
 
 <script setup>
-import { Checked } from '@element-plus/icons-vue'
+import { Checked, Document, Download } from '@element-plus/icons-vue'
 
 const props = defineProps({
   message: { type: Object, required: true },
   isMine: { type: Boolean, default: false }
 })
 
-defineEmits(['reply', 'recall'])
+defineEmits(['reply', 'recall', 'deleteMsg'])
+
+function extractImageUrl(content) {
+  const m = content?.match(/\/api\/files\/[^\s]+/)
+  return m ? m[0] : ''
+}
+function extractFileUrl(content) {
+  const m = content?.match(/\/api\/files\/[^\s]+/)
+  return m ? m[0] : ''
+}
+function extractFileName(content) {
+  const m = content?.match(/\[文件\]\s+(.+?)\s+\/api\/files\//)
+  return m ? m[1] : '下载文件'
+}
 
 function formatTime(timeStr) {
   if (!timeStr) return ''
@@ -55,10 +83,16 @@ function truncate(text, len) {
   return text.length > len ? text.substring(0, len) + '...' : text
 }
 
-function isRecalled(msg) {
+function highlightMentions(text) {
+  if (!text) return ''
+  return text
+    .replace(/@全体成员/g, '<span class="mention-highlight mention-all">@全体成员</span>')
+    .replace(/@(\S+)/g, '<span class="mention-highlight">@$1</span>')
+}
+
+function isRecallable(msg) {
   if (!msg.createdAt) return false
-  const elapsed = Date.now() - new Date(msg.createdAt).getTime()
-  return elapsed < 2 * 60 * 1000
+  return (Date.now() - new Date(msg.createdAt).getTime()) < 2 * 60 * 1000
 }
 </script>
 
@@ -152,6 +186,27 @@ function isRecalled(msg) {
   background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
 }
 
+.message-image {
+  margin-bottom: 4px;
+}
+.message-file {
+  margin-bottom: 6px;
+}
+.file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(0,0,0,0.05);
+  border-radius: 10px;
+  color: var(--primary-color);
+  text-decoration: none;
+  font-size: 13px;
+  transition: background 0.2s;
+}
+.file-link:hover { background: rgba(0,0,0,0.1); }
+.file-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .message-text {
   font-size: 15px;
   line-height: 1.6;
@@ -235,6 +290,22 @@ function isRecalled(msg) {
 
 .action-btn.recall:hover {
   background: rgba(239, 68, 68, 0.1);
+}
+
+.action-btn.del {
+  color: var(--error-color);
+}
+
+.action-btn.del:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+:deep(.mention-highlight) {
+  color: var(--primary-color); font-weight: 600;
+  background: rgba(99,102,241,0.1); padding: 1px 4px; border-radius: 4px;
+}
+:deep(.mention-all) {
+  color: #fff; background: var(--error-color);
 }
 
 .mine .action-btn.reply {

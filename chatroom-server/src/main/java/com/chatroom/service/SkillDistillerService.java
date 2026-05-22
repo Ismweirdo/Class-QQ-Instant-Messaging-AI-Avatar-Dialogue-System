@@ -193,7 +193,7 @@ public class SkillDistillerService {
         prompt.append("。请自然地回复，不要表现出你是AI。");
         if (useEmoji) prompt.append("可以适当使用Emoji表情。");
         if (useTone) prompt.append("可以适当使用语气助词。");
-        prompt.append("回复要简短自然，不超过100字。");
+        prompt.append("以真实自然的风格回复。如果发现开始重复之前说过的内容，换个方式表达或切换话题。");
 
         return prompt.toString();
     }

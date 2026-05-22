@@ -16,6 +16,12 @@ public class BotSkill {
     private String languageStyleJson;
     private String systemPrompt;
     private String fewShotExamples;
+    private Integer maxTokens;
+    private Double temperature;
+    private String conversationMode;
+    private Integer memorySize;
+    private Integer ragEnabled;
+    private Integer ragTopK;
     private String apiEndpoint;
     private String apiKey;
     private String model;

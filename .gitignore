@@ -25,3 +25,9 @@ chatroom-server/data/
 
 # Logs
 *.log
+
+# Python
+__pycache__/
+
+# Claude CLI
+.claude/

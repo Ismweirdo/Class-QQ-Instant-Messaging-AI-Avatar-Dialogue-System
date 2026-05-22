@@ -35,11 +35,25 @@ public class MessageController {
         return Result.ok(messageService.getGroupHistory(groupId, page, size));
     }
 
-    @Operation(summary = "撤回消息")
+    @Operation(summary = "撤回消息（2分钟内标记为已撤回）")
     @DeleteMapping("/{id}")
     public Result<Void> recallMessage(@PathVariable Long id) {
         messageService.recallMessage(id, SecurityUtil.getCurrentUserId());
         return Result.ok();
+    }
+
+    @Operation(summary = "永久删除单条消息")
+    @DeleteMapping("/{id}/permanent")
+    public Result<Void> deleteMessage(@PathVariable Long id) {
+        messageService.permanentDelete(id, SecurityUtil.getCurrentUserId());
+        return Result.ok();
+    }
+
+    @Operation(summary = "清除与好友的聊天记录")
+    @DeleteMapping("/private/{friendId}")
+    public Result<java.util.Map<String, Object>> clearPrivateHistory(@PathVariable Long friendId) {
+        int deleted = messageService.clearPrivateHistory(SecurityUtil.getCurrentUserId(), friendId);
+        return Result.ok(java.util.Map.of("deleted", deleted, "friendId", friendId));
     }
 
     @Operation(summary = "获取消息上下文(含引用消息)")

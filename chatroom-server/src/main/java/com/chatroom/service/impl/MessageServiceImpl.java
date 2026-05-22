@@ -97,6 +97,18 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     @Transactional
+    public int clearPrivateHistory(Long userId, Long friendId) {
+        LambdaQueryWrapper<Message> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Message::getMessageType, Constants.MSG_TYPE_PRIVATE)
+                .and(w -> w
+                    .and(w1 -> w1.eq(Message::getSenderId, userId).eq(Message::getTargetId, friendId))
+                    .or(w2 -> w2.eq(Message::getSenderId, friendId).eq(Message::getTargetId, userId))
+                );
+        return messageMapper.delete(wrapper);
+    }
+
+    @Override
+    @Transactional
     public void recallMessage(Long messageId, Long userId) {
         Message msg = messageMapper.selectById(messageId);
         if (msg == null) {
@@ -114,6 +126,15 @@ public class MessageServiceImpl implements MessageService {
         msg.setContent("[消息已撤回]");
         msg.setContentType(Constants.CONTENT_TYPE_TEXT);
         messageMapper.updateById(msg);
+    }
+
+    @Override
+    @Transactional
+    public void permanentDelete(Long messageId, Long userId) {
+        Message msg = messageMapper.selectById(messageId);
+        if (msg == null) throw new RuntimeException("消息不存在");
+        if (!msg.getSenderId().equals(userId)) throw new RuntimeException("只能删除自己的消息");
+        messageMapper.deleteById(messageId);
     }
 
     @Override
@@ -139,6 +160,68 @@ public class MessageServiceImpl implements MessageService {
     @Override
     public Message getById(Long messageId) {
         return messageMapper.selectById(messageId);
+    }
+
+    @Override
+    public List<MessageVO> getRecentMessages(Long userId, Long friendId, int count) {
+        LambdaQueryWrapper<Message> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Message::getMessageType, Constants.MSG_TYPE_PRIVATE)
+                .and(w -> w
+                    .and(w1 -> w1.eq(Message::getSenderId, userId).eq(Message::getTargetId, friendId))
+                    .or(w2 -> w2.eq(Message::getSenderId, friendId).eq(Message::getTargetId, userId))
+                )
+                .ge(Message::getCreatedAt, LocalDateTime.now().minusDays(Constants.HISTORY_RETENTION_DAYS))
+                .orderByDesc(Message::getId)
+                .last("LIMIT " + Math.min(count, 200));
+
+        List<Message> records = messageMapper.selectList(wrapper);
+        List<MessageVO> vos = new ArrayList<>();
+        for (int i = records.size() - 1; i >= 0; i--) {
+            vos.add(toMessageVO(records.get(i)));
+        }
+        return vos;
+    }
+
+    @Override
+    public List<MessageVO> getRecentGroupMessages(Long groupId, int count) {
+        LambdaQueryWrapper<Message> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Message::getMessageType, Constants.MSG_TYPE_GROUP)
+                .eq(Message::getTargetId, groupId)
+                .orderByDesc(Message::getId)
+                .last("LIMIT " + Math.min(count, 100));
+        List<Message> records = messageMapper.selectList(wrapper);
+        List<MessageVO> vos = new ArrayList<>();
+        for (int i = records.size() - 1; i >= 0; i--) {
+            vos.add(toMessageVO(records.get(i)));
+        }
+        return vos;
+    }
+
+    @Override
+    public List<MessageVO> batchSaveMessages(Long senderId, List<com.chatroom.model.dto.ChatMessageDTO> dtos) {
+        List<Message> messages = new ArrayList<>();
+        for (var dto : dtos) {
+            Message msg = new Message();
+            msg.setMessageType(dto.getMessageType());
+            msg.setSenderId(senderId);
+            msg.setTargetId(dto.getTargetId());
+            msg.setReplyToId(dto.getReplyToId());
+            msg.setContent(dto.getContent());
+            msg.setContentType(dto.getContentType() != null ? dto.getContentType() : Constants.CONTENT_TYPE_TEXT);
+            msg.setStatus(Constants.MSG_STATUS_SENT);
+            msg.setClientMessageId(dto.getClientMessageId());
+            msg.setCreatedAt(LocalDateTime.now());
+            messages.add(msg);
+        }
+        // MyBatis-Plus batch insert
+        for (Message m : messages) {
+            messageMapper.insert(m);
+        }
+        List<MessageVO> vos = new ArrayList<>();
+        for (Message m : messages) {
+            vos.add(toMessageVO(m));
+        }
+        return vos;
     }
 
     public MessageVO toMessageVO(Message msg) {

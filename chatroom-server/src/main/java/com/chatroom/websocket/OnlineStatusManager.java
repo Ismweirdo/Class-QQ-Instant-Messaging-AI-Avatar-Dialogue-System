@@ -18,16 +18,4 @@ public class OnlineStatusManager {
     public void userOffline(Long userId) {
         onlineUsers.remove(userId);
     }
-
-    public boolean isOnline(Long userId) {
-        return onlineUsers.containsKey(userId);
-    }
-
-    public int getOnlineCount() {
-        return onlineUsers.size();
-    }
-
-    public Map<Long, String> getOnlineUsers() {
-        return Map.copyOf(onlineUsers);
-    }
 }

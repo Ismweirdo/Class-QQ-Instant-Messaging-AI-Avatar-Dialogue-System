@@ -117,6 +117,7 @@ public class FriendServiceImpl implements FriendService {
                 vo.setStatus(user.getStatus());
                 vo.setFriendStatus(f.getStatus());
                 vo.setIsBot(user.getIsBot());
+                vo.setRemark(f.getRemark());
                 vo.setCreatedAt(f.getCreatedAt());
                 result.add(vo);
             }
@@ -145,11 +146,31 @@ public class FriendServiceImpl implements FriendService {
                 vo.setStatus(user.getStatus());
                 vo.setFriendStatus(f.getStatus());
                 vo.setIsBot(user.getIsBot());
+                vo.setRemark(f.getRemark());
                 vo.setCreatedAt(f.getCreatedAt());
                 result.add(vo);
             }
         }
         return result;
+    }
+
+    @Override
+    public void setRemark(Long userId, Long friendId, String remark) {
+        LambdaQueryWrapper<Friend> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Friend::getUserId, userId).eq(Friend::getFriendId, friendId);
+        Friend f = friendMapper.selectOne(wrapper);
+        if (f == null) {
+            // Try reverse direction
+            wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(Friend::getUserId, friendId).eq(Friend::getFriendId, userId);
+            f = friendMapper.selectOne(wrapper);
+        }
+        if (f == null) {
+            throw new RuntimeException("好友关系不存在");
+        }
+        f.setRemark(remark != null && !remark.isBlank() ? remark.trim() : null);
+        friendMapper.updateById(f);
+        log.info("Remark updated for friend {} by user {}: {}", friendId, userId, remark);
     }
 
     private Friend getPendingRequest(Long userId, Long friendId) {

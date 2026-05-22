@@ -13,7 +13,7 @@ Usage:
   python bot-stress-test.py --quick      # 快速模式 (5 Bot)
   python bot-stress-test.py --blast      # 爆破模式 (100 Bot)
 """
-import asyncio, json, uuid, time, argparse, sys, statistics
+import asyncio, json, uuid, time, argparse, sys, statistics, random
 from dataclasses import dataclass, field
 
 try:
@@ -61,6 +61,60 @@ async def api(session, method, path, data=None, token=None, timeout=30):
                     return await r.json(), r.status
     except Exception as e:
         return {"error": str(e)}, 0
+
+# Diverse message pool for B2/B3 tests (avoids cache hits)
+STRESS_MSG_POOL = [
+    "今天有什么计划吗？说来听听～",
+    "如果你能瞬移，最想去哪个城市？",
+    "最近在追什么好剧？安利一下！",
+    "突然好想喝奶茶，推荐个口味？",
+    "周末过得怎么样？有没有什么趣事？",
+    "你对未来五年有什么规划？",
+    "什么歌你最近单曲循环了？",
+    "有猫和没猫的日子差别有多大？",
+    "分享一下你最近学到的新东西！",
+    "晚饭吃了什么？有没有踩雷？",
+    "你觉得什么是真正的自由？",
+    "最近有没有什么事情让你特别开心？",
+    "如果给你100万你会怎么花？",
+    "你相信命中注定吗？",
+    "最想去但没有去的地方是哪里？",
+    "有没有一句话改变了你的人生？",
+    "熬夜最狠的一次到几点？因为什么？",
+    "你觉得内向和外向哪个更有优势？",
+    "做过最疯狂的事是什么？分享下。",
+    "最近有没有觉得被什么治愈到？",
+    "你对自己的颜值打几分？诚实回答。",
+    "如果可以换一个职业你最想做什么？",
+    "有没有一本书让你看了好几遍？",
+    "你和父母最近一次聊天是什么时候？",
+    "觉得自己现在的生活满意吗？不满意的地方在哪？",
+    "有没有什么童年阴影现在想起来还怕？",
+    "旅途中遇到过最崩溃的事是什么？",
+    "你觉得AI最终会变成什么样？",
+    "说一个你隐藏很久的秘密吧（不重要的那种就行）。",
+    "早晨起床第一件事是看手机吗？",
+    "最喜欢的动漫角色是谁？为什么？",
+    "你最害怕失去什么？",
+    "有没有一瞬间想辞职/退学？因为什么？",
+    "你觉得钱能买到幸福吗？",
+    "如果可以拥有超能力，你要什么？",
+    "最近有什么热搜让你觉得很无语？",
+    "你最近一次哭是为什么？",
+    "你最好的朋友认识多久了？怎么认识的？",
+    "你觉得幸福的关键是什么？",
+    "如果你消失了，会有人发现吗？开个玩笑。",
+    "最让你觉得温暖的一句话是什么？",
+    "你有什么奇怪的强迫症吗？",
+    "最近有没有人让你刮目相看？",
+    "你是怎么缓解焦虑的？",
+    "你觉得恋爱中最重要的是什么？",
+    "有没有什么小众爱好分享一下？",
+    "你最喜欢什么类型的音乐？",
+    "咖啡和茶你更喜欢哪个？",
+    "如果世界末日只剩24小时，你会怎么过？",
+    "今天穿的是什么颜色的衣服？回答不要照镜子。",
+]
 
 # ==================== B1: Bot 注册并发 ====================
 async def test_bot_registration(count: int, token: str):
@@ -300,7 +354,8 @@ async def test_single_bot_queue(token: str, my_user_id: int, bot_id: int, burst:
         send_lats = []
         for i in range(burst):
             cid = f"b3_{i:03d}"
-            msg = {"content": f"测试消息{i+1}: 你好吗？",
+            msg_text = STRESS_MSG_POOL[i % len(STRESS_MSG_POOL)]
+            msg = {"content": msg_text,
                    "messageType": 0, "targetId": bot_id,
                    "contentType": 0, "clientMessageId": cid}
             t1 = time.time()
@@ -411,7 +466,8 @@ async def test_circuit_breaker(token: str, bot_id: int):
         )
         await ws.send(stomp_connect(token))
         raw = await asyncio.wait_for(ws.recv(), timeout=5)
-        msg = {"content": "你好呀！",
+        msg_text = random.choice(STRESS_MSG_POOL)
+        msg = {"content": msg_text,
                "messageType": 0, "targetId": bot_id,
                "contentType": 0,
                "clientMessageId": f"probe_{uuid.uuid4().hex[:8]}"}

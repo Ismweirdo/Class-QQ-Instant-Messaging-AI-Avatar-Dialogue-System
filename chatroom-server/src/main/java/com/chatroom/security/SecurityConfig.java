@@ -27,7 +27,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
                 .requestMatchers("/avatars/**").permitAll()
-                .requestMatchers("/api/bots/config", "/api/bots/qq/**").permitAll()
+                .requestMatchers("/api/bots/config", "/api/bots/qq/**", "/api/bots/providers").permitAll()
+                .requestMatchers("/api/files/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**").permitAll()

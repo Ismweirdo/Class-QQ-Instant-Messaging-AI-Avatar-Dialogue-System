@@ -3,6 +3,7 @@ package com.chatroom.websocket;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.chatroom.common.Constants;
 import com.chatroom.mapper.FriendMapper;
+import com.chatroom.mapper.GroupMemberMapper;
 import com.chatroom.mapper.MessageMapper;
 import com.chatroom.mapper.UserMapper;
 import com.chatroom.model.dto.ChatMessageDTO;
@@ -24,6 +25,7 @@ import org.springframework.web.socket.messaging.SessionConnectEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.security.Principal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +44,7 @@ public class ChatWebSocketHandler {
     private final MessageMapper messageMapper;
     private final UserMapper userMapper;
     private final FriendMapper friendMapper;
+    private final GroupMemberMapper groupMemberMapper;
     private final OnlineStatusManager onlineStatusManager;
     private final BotManager botManager;
 
@@ -149,9 +152,36 @@ public class ChatWebSocketHandler {
             try {
                 User sender = userMapper.selectById(senderId);
                 String senderName = sender != null ? sender.getNickname() : "用户";
-                String reply = botManager.handleBotMessage(botUserId, senderId, senderName, userMessage.getContent());
-                if (reply != null && !reply.trim().isEmpty()) {
-                    pushBotMessage(botUserId, senderId, reply, Constants.MSG_TYPE_PRIVATE);
+                // Send stream start marker
+                var streamPayload = new java.util.HashMap<String, Object>();
+                streamPayload.put("type", "BOT_STREAM_START");
+                streamPayload.put("botUserId", botUserId);
+                streamPayload.put("targetId", senderId);
+                messagingTemplate.convertAndSendToUser(String.valueOf(senderId), "/queue/bot/stream", streamPayload);
+                messagingTemplate.convertAndSendToUser(String.valueOf(botUserId), "/queue/bot/stream", streamPayload);
+
+                String fullReply = botManager.handleBotMessageStream(botUserId, senderId, senderName,
+                    userMessage.getContent(), token -> {
+                        var chunk = new java.util.HashMap<String, Object>();
+                        chunk.put("type", "BOT_STREAM_CHUNK");
+                        chunk.put("botUserId", botUserId);
+                        chunk.put("targetId", senderId);
+                        chunk.put("token", token);
+                        messagingTemplate.convertAndSendToUser(String.valueOf(senderId), "/queue/bot/stream", chunk);
+                        messagingTemplate.convertAndSendToUser(String.valueOf(botUserId), "/queue/bot/stream", chunk);
+                    });
+
+                // Send stream end with full message
+                if (fullReply != null && !fullReply.isEmpty()) {
+                    var endPayload = new java.util.HashMap<String, Object>();
+                    endPayload.put("type", "BOT_STREAM_END");
+                    endPayload.put("botUserId", botUserId);
+                    endPayload.put("targetId", senderId);
+                    endPayload.put("content", fullReply);
+                    messagingTemplate.convertAndSendToUser(String.valueOf(senderId), "/queue/bot/stream", endPayload);
+                    messagingTemplate.convertAndSendToUser(String.valueOf(botUserId), "/queue/bot/stream", endPayload);
+                    // Save to DB without pushing via CHAT channel (already delivered via stream)
+                    saveBotMessageToDb(botUserId, senderId, fullReply, Constants.MSG_TYPE_PRIVATE);
                 }
             } catch (Exception e) {
                 log.error("Bot {} reply error", botUserId, e);
@@ -160,50 +190,81 @@ public class ChatWebSocketHandler {
     }
 
     private void handleGroupBotReply(Long senderId, Long groupId, String content, MessageVO userMessage) {
-        List<User> bots = userMapper.selectList(
-                new LambdaQueryWrapper<User>().eq(User::getIsBot, 1));
+        // Only get bots that are members of this group
+        List<com.chatroom.model.entity.GroupMember> members = groupMemberMapper.selectList(
+            new LambdaQueryWrapper<com.chatroom.model.entity.GroupMember>().eq(com.chatroom.model.entity.GroupMember::getGroupId, groupId));
+        List<User> bots = new ArrayList<>();
+        for (var m : members) {
+            User u = userMapper.selectById(m.getUserId());
+            if (u != null && u.getIsBot() != null && u.getIsBot() == 1) bots.add(u);
+        }
+        log.info("Group {} bot reply check: {} bots in group, content='{}'", groupId, bots.size(), content != null ? content.substring(0, Math.min(50, content.length())) : "null");
+        if (bots.isEmpty()) return;
+
+        boolean atAll = content != null && (content.contains("@全体成员")
+                || content.contains("@everyone") || content.contains("@all"));
+        String cleanedContent = atAll
+                ? content.replace("@全体成员", "").replace("@everyone", "").replace("@all", "").trim()
+                : content;
+
+        // Random chance (30%) a bot chimes in even without explicit mention — makes groups lively
+        java.util.Random rng = new java.util.Random();
+
         CompletableFuture.runAsync(() -> {
             for (User bot : bots) {
-                // Check if bot is mentioned in the message
-                if (content != null && (content.contains("@" + bot.getNickname())
-                        || content.contains("@" + bot.getUsername()))) {
-                    try {
-                        User sender = userMapper.selectById(senderId);
-                        String senderName = sender != null ? sender.getNickname() : "用户";
-                        String reply = botManager.handleBotMessage(bot.getId(), senderId, senderName,
-                                content.replace("@" + bot.getNickname(), "")
-                                      .replace("@" + bot.getUsername(), "").trim());
-                        if (reply != null && !reply.trim().isEmpty()) {
-                            pushBotMessage(bot.getId(), groupId, reply, Constants.MSG_TYPE_GROUP);
-                        }
-                    } catch (Exception e) {
-                        log.error("Bot {} group reply error", bot.getId(), e);
+                boolean mentioned = content != null && (content.contains("@" + bot.getNickname())
+                        || content.contains("@" + bot.getUsername()));
+                boolean randomChimeIn = !atAll && !mentioned && rng.nextDouble() < 0.30;
+                if (!atAll && !mentioned && !randomChimeIn) continue;
+
+                try {
+                    User sender = userMapper.selectById(senderId);
+                    String senderName = sender != null ? sender.getNickname() : "用户";
+                    String msgForBot = mentioned
+                            ? content.replace("@" + bot.getNickname(), "").replace("@" + bot.getUsername(), "").trim()
+                            : cleanedContent;
+
+                    // Stream group reply
+                    var streamStart = new java.util.HashMap<String, Object>();
+                    streamStart.put("type", "BOT_STREAM_START");
+                    streamStart.put("botUserId", bot.getId());
+                    streamStart.put("targetId", groupId);
+                    streamStart.put("isGroup", true);
+                    messagingTemplate.convertAndSend("/topic/group/" + groupId + "/stream", streamStart);
+
+                    String fullReply = botManager.handleBotMessageStream(bot.getId(), senderId, senderName,
+                        msgForBot, token -> {
+                            var chunk = new java.util.HashMap<String, Object>();
+                            chunk.put("type", "BOT_STREAM_CHUNK");
+                            chunk.put("botUserId", bot.getId());
+                            chunk.put("token", token);
+                            messagingTemplate.convertAndSend("/topic/group/" + groupId + "/stream", chunk);
+                        });
+
+                    if (fullReply != null && !fullReply.trim().isEmpty()) {
+                        var streamEnd = new java.util.HashMap<String, Object>();
+                        streamEnd.put("type", "BOT_STREAM_END");
+                        streamEnd.put("botUserId", bot.getId());
+                        streamEnd.put("content", fullReply);
+                        messagingTemplate.convertAndSend("/topic/group/" + groupId + "/stream", streamEnd);
+                        saveBotMessageToDb(bot.getId(), groupId, fullReply, Constants.MSG_TYPE_GROUP);
+                        try { Thread.sleep(800); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
                     }
+                } catch (Exception e) {
+                    log.error("Bot {} group reply error", bot.getId(), e);
                 }
             }
         }, botTaskExecutor);
     }
 
-    private void pushBotMessage(Long botUserId, Long targetId, String content, int messageType) {
+    private void saveBotMessageToDb(Long botUserId, Long targetId, String content, int messageType) {
         ChatMessageDTO botDto = new ChatMessageDTO();
         botDto.setContent(content);
         botDto.setMessageType(messageType);
         botDto.setTargetId(targetId);
         botDto.setContentType(Constants.CONTENT_TYPE_TEXT);
         botDto.setClientMessageId("BOT_" + UUID.randomUUID().toString().replace("-", ""));
-
-        MessageVO botMsg = messageService.sendAndSaveMessage(botUserId, botDto);
-        Map<String, Object> botPayload = buildWsPayload(botMsg);
-
-        if (messageType == Constants.MSG_TYPE_PRIVATE) {
-            messagingTemplate.convertAndSendToUser(
-                    String.valueOf(targetId), "/queue/private/chat", botPayload);
-            messagingTemplate.convertAndSendToUser(
-                    String.valueOf(botUserId), "/queue/private/chat", botPayload);
-        } else {
-            messagingTemplate.convertAndSend(
-                    "/topic/group/" + targetId, botPayload);
-        }
+        messageService.sendAndSaveMessage(botUserId, botDto);
     }
 
     @MessageMapping("/chat.ack")

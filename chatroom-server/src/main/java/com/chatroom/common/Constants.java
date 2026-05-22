@@ -48,10 +48,25 @@ public class Constants {
     public static final int BOT_STATUS_CIRCUIT_BROKEN = 2;
 
     // Bot limits
-    public static final int BOT_CIRCUIT_BREAK_THRESHOLD = 3;
-    public static final long BOT_CIRCUIT_BREAK_SILENCE_MS = 30_000;
+    public static final int BOT_CIRCUIT_BREAK_THRESHOLD = 5;
+    public static final long BOT_CIRCUIT_BREAK_SILENCE_MS = 15_000;
     public static final int BOT_MAX_QUEUE_SIZE = 10;
     public static final int BOT_MAX_CONCURRENCY = 1;
+
+    // Bot LLM parameters
+    public static final int BOT_DEFAULT_MAX_TOKENS = 4096;
+    public static final double BOT_DEFAULT_TEMPERATURE = 0.8;
+    public static final int BOT_DEFAULT_MEMORY_SIZE = 10;
+    public static final int BOT_MAX_MEMORY_SIZE = 50;
+
+    // Multi-level memory
+    public static final int BOT_WORKING_MEMORY_SIZE = 5;        // max exchanges in working memory
+    public static final int BOT_WORKING_MEMORY_MAX_CHARS = 3000; // max chars per exchange in working memory
+    public static final int BOT_SHORT_TERM_MAX = 30;            // max messages in short-term Redis list
+    public static final int BOT_LTM_CONSOLIDATION_THRESHOLD = 20; // trigger consolidation when short-term exceeds this
+    public static final int BOT_LTM_MAX_PER_PAIR = 50;          // max long-term memory entries per bot-user pair
+    public static final int BOT_LTM_CONTEXT_LIMIT = 5;          // max LTM entries injected into context
+    public static final int BOT_LTM_IMPORTANCE_MIN = 1;         // minimum importance score (1-5)
 
     // Distillation
     public static final int DISTILL_MIN_MESSAGES = 100;

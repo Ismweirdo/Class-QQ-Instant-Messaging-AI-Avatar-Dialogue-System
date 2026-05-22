@@ -13,23 +13,22 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(RuntimeException.class)
-    public Result<?> handleRuntimeException(RuntimeException e) {
-        log.error("Runtime exception: {}", e.getMessage());
-        return Result.error(e.getMessage());
-    }
-
     @ExceptionHandler(BadCredentialsException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    public Result<?> handleBadCredentials(BadCredentialsException e) {
+    public Result<?> handleBadCredentials() {
         return Result.unauthorized("用户名或密码错误");
     }
 
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Result<?> handleBindException(BindException e) {
-        String message = e.getBindingResult().getAllErrors().get(0).getDefaultMessage();
-        return Result.error(400, message);
+        return Result.error(400, e.getBindingResult().getAllErrors().get(0).getDefaultMessage());
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    public Result<?> handleRuntimeException(RuntimeException e) {
+        log.error("Runtime exception: {}", e.getMessage());
+        return Result.error(e.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

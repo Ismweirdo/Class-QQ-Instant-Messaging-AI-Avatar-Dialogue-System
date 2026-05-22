@@ -23,15 +23,15 @@ public class AsyncExecutorConfig {
     @Bean("botTaskExecutor")
     public Executor botTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(4);
-        executor.setMaxPoolSize(20);
-        executor.setQueueCapacity(200);
-        executor.setKeepAliveSeconds(60);
+        executor.setCorePoolSize(50);
+        executor.setMaxPoolSize(300);
+        executor.setQueueCapacity(2000);
+        executor.setKeepAliveSeconds(120);
         executor.setThreadNamePrefix("bot-async-");
         executor.setRejectedExecutionHandler(
                 new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(30);
+        executor.setAwaitTerminationSeconds(60);
         executor.initialize();
         return executor;
     }
@@ -40,7 +40,7 @@ public class AsyncExecutorConfig {
     @Bean
     public ThreadPoolTaskScheduler taskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-        scheduler.setPoolSize(4);
+        scheduler.setPoolSize(8);
         scheduler.setThreadNamePrefix("sched-");
         scheduler.setWaitForTasksToCompleteOnShutdown(true);
         scheduler.setAwaitTerminationSeconds(30);

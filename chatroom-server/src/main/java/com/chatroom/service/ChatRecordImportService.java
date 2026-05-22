@@ -359,7 +359,8 @@ public class ChatRecordImportService {
                 Map<String, Object> regResult = botManager.registerBot(
                         username, senderName, "导入_" + senderName,
                         systemPrompt, fewShotJson, emotionJson, styleJson,
-                        null, null, null, null);
+                        null, null, null, null,
+                        null, null, null, null, null, null);
                 BotSkill skill = (BotSkill) regResult.get("skill");
 
                 // Auto-create friend relationship so bot appears in contact list
@@ -661,7 +662,7 @@ public class ChatRecordImportService {
                 + "- 不强行安慰，必要时给一句可执行的小建议\n\n"
                 + "关系定位:\n"
                 + "- 更像熟悉的网友/同龄朋友，直来直去但不过分亲密\n\n"
-                + "回复要简短自然，不超过80字，不要透露你是AI。";
+                + "以真实自然的方式回复，不要透露你是AI。如果发现自己在重复之前说过的话，换个话题或表达方式。";
     }
 
     private String toJson(Object obj) {

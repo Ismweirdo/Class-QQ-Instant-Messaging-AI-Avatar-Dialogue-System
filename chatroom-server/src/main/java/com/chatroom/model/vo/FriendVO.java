@@ -13,5 +13,6 @@ public class FriendVO {
     private Integer status;
     private Integer friendStatus;
     private Integer isBot;
+    private String remark;
     private LocalDateTime createdAt;
 }

@@ -27,29 +27,30 @@ public class SkillFolderService {
 
     private static final String SKILLS_ROOT = "data/skills";
 
-    /** Resolve the absolute path to a skill folder. */
+    @org.springframework.beans.factory.annotation.Value("${github.token:}")
+    private String githubToken;
+
+    /** Resolve the absolute path to a skill folder (always under user.dir/data/skills). */
     public Path resolveSkillDir(String skillFolder) {
-        Path base = Paths.get(System.getProperty("user.dir"));
-        Path dir = base.resolve(SKILLS_ROOT).resolve(sanitize(skillFolder));
-        if (!Files.exists(dir) && base.getFileName() != null
-                && "chatroom-server".equalsIgnoreCase(base.getFileName().toString())) {
-            dir = base.getParent().resolve(SKILLS_ROOT).resolve(sanitize(skillFolder));
-        }
-        return dir;
+        return Paths.get(System.getProperty("user.dir"))
+                .resolve(SKILLS_ROOT).resolve(sanitize(skillFolder));
     }
 
-    /** Create an empty skill folder with SKILL.md skeleton. */
+    /** Create an empty skill folder with SKILL.md skeleton (only if SKILL.md doesn't exist). */
     public Path createSkillFolder(String skillName) {
         Path dir = resolveSkillDir(skillName);
         try {
             Files.createDirectories(dir.resolve("examples"));
             Files.createDirectories(dir.resolve("references"));
             Files.createDirectories(dir.resolve("custom"));
-            // Write skeleton SKILL.md
-            String skeleton = "---\nname: " + skillName + "\nversion: 1.0.0\n---\n\n"
-                    + "# " + skillName + "\n\n"
-                    + "## system_prompt\n\n(在此编写人物系统提示词)\n";
-            Files.writeString(dir.resolve("SKILL.md"), skeleton, StandardCharsets.UTF_8);
+            // Only write skeleton if SKILL.md doesn't already exist
+            Path skillMd = dir.resolve("SKILL.md");
+            if (!Files.exists(skillMd)) {
+                String skeleton = "---\nname: " + skillName + "\nversion: 1.0.0\n---\n\n"
+                        + "# " + skillName + "\n\n"
+                        + "## system_prompt\n\n(在此编写人物系统提示词)\n";
+                Files.writeString(skillMd, skeleton, StandardCharsets.UTF_8);
+            }
             log.info("Created skill folder: {}", dir);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to create skill folder: " + skillName, e);
@@ -58,49 +59,165 @@ public class SkillFolderService {
     }
 
     /**
-     * Import skill from a git repository URL.
-     * Clones the repo to a temp dir, then copies all content (SKILL.md, examples/, references/)
-     * into the skill folder. Does NOT copy .git, LICENSE, README.md.
+     * Import skill from a GitHub repository URL using the GitHub API.
+     * Recursively downloads all files (SKILL.md, examples/, references/)
+     * into the skill folder. Skips .git, LICENSE, README.md.
      */
     public Path importFromGitUrl(String skillName, String gitUrl) {
         Path skillDir = resolveSkillDir(skillName);
-        Path tempDir = null;
         try {
-            // Clone to temp directory
-            tempDir = Files.createTempDirectory("skill-import-");
-            log.info("Cloning {} to {}", gitUrl, tempDir);
-            ProcessBuilder pb = new ProcessBuilder(
-                    "git", "clone", "--depth", "1", gitUrl, tempDir.toString());
-            pb.inheritIO();
-            Process p = pb.start();
-            int exitCode = p.waitFor();
-            if (exitCode != 0) {
-                throw new RuntimeException("git clone failed with exit code " + exitCode);
+            // Parse GitHub URL
+            String clean = gitUrl.replaceAll("\\.git$", "").replaceFirst("/$", "");
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("https?://github\\.com/([^/]+)/([^/]+)/?.*")
+                    .matcher(clean);
+            if (!m.find()) {
+                throw new RuntimeException("Unsupported URL format: " + gitUrl);
             }
+            String owner = m.group(1);
+            String repo = m.group(2);
 
-            // Remove old skill folder if exists
+            // Remove old skill folder
             if (Files.exists(skillDir)) {
                 deleteRecursively(skillDir);
             }
             Files.createDirectories(skillDir);
-
-            // Copy relevant files: SKILL.md, examples/, references/
-            copySkillContent(tempDir, skillDir);
-
-            // Ensure required dirs exist
             Files.createDirectories(skillDir.resolve("examples"));
             Files.createDirectories(skillDir.resolve("references"));
             Files.createDirectories(skillDir.resolve("custom"));
 
-            log.info("Imported skill from URL: {} -> {}", gitUrl, skillDir);
-        } catch (IOException | InterruptedException e) {
-            throw new RuntimeException("Failed to import from git URL: " + gitUrl, e);
-        } finally {
-            if (tempDir != null) {
-                try { deleteRecursively(tempDir); } catch (Exception ignored) {}
-            }
+            // Recursively download via GitHub API
+            String baseApi = "https://api.github.com/repos/" + owner + "/" + repo + "/contents/";
+            downloadGitHubDir(baseApi, "", skillDir);
+
+            log.info("Imported skill from GitHub API: {} -> {}", gitUrl, skillDir);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to import from URL: " + gitUrl, e);
         }
         return skillDir;
+    }
+
+    /** Recursively download files and directories from GitHub API. */
+    private void downloadGitHubDir(String baseApiUrl, String path, Path localDir) throws IOException {
+        String apiUrl = baseApiUrl + path;
+        log.debug("Fetching GitHub dir: {}", apiUrl);
+
+        java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(10))
+                .followRedirects(java.net.http.HttpClient.Redirect.ALWAYS)
+                .build();
+        var reqBuilder = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(apiUrl))
+                .timeout(java.time.Duration.ofSeconds(30))
+                .header("User-Agent", "Chatroom-Skill-Importer/1.0")
+                .header("Accept", "application/vnd.github.v3+json");
+        if (githubToken != null && !githubToken.isBlank()) {
+            reqBuilder.header("Authorization", "Bearer " + githubToken);
+        }
+        java.net.http.HttpRequest request = reqBuilder.GET().build();
+
+        java.net.http.HttpResponse<String> response;
+        try {
+            response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        if (response.statusCode() != 200) {
+            log.warn("GitHub API returned {} for {}", response.statusCode(), apiUrl);
+            return;
+        }
+
+        // Parse JSON array
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            List<?> items = mapper.readValue(response.body(), List.class);
+            for (Object itemObj : items) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> item = (Map<String, Object>) itemObj;
+                String type = (String) item.get("type");
+                String name = (String) item.get("name");
+
+                // Skip files we don't need
+                if (".git".equals(name) || "LICENSE".equals(name) || "README.md".equals(name)) {
+                    continue;
+                }
+
+                if ("dir".equals(type)) {
+                    // Recursively download subdirectory
+                    Path subDir = localDir.resolve(name);
+                    Files.createDirectories(subDir);
+                    downloadGitHubDir(baseApiUrl, path + name + "/", subDir);
+                } else if ("file".equals(type)) {
+                    // Skip binary / non-text files
+                    String lname = name.toLowerCase();
+                    if (lname.endsWith(".jpg") || lname.endsWith(".jpeg") || lname.endsWith(".png")
+                            || lname.endsWith(".gif") || lname.endsWith(".webp") || lname.endsWith(".ico")
+                            || lname.endsWith(".pdf") || lname.endsWith(".zip") || lname.endsWith(".mp4")) {
+                        log.debug("Skipping binary file: {}", name);
+                        continue;
+                    }
+
+                    // Fetch file content via individual API call (directory listing lacks content field)
+                    String fileApiUrl = (String) item.get("url");
+                    String downloadUrl = (String) item.get("download_url");
+                    if (fileApiUrl == null) fileApiUrl = (String) item.get("git_url");
+
+                    String fileContent = fetchIndividualFile(fileApiUrl, downloadUrl);
+                    if (fileContent != null) {
+                        Path dest = localDir.resolve(name);
+                        Files.createDirectories(dest.getParent());
+                        Files.writeString(dest, fileContent, StandardCharsets.UTF_8);
+                        log.debug("Downloaded: {} ({} bytes)", name, fileContent.length());
+                    } else {
+                        log.warn("Failed to download: {}", name);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse GitHub API response for {}", apiUrl, e);
+        }
+    }
+
+    /**
+     * Fetch a single file from GitHub API using its dedicated API URL.
+     * The file-specific API returns base64-encoded content.
+     * Falls back to raw download_url if API call fails.
+     */
+    private String fetchIndividualFile(String fileApiUrl, String downloadUrl) {
+        if (fileApiUrl == null || fileApiUrl.isBlank()) return null;
+        try {
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(10))
+                    .followRedirects(java.net.http.HttpClient.Redirect.ALWAYS)
+                    .build();
+            var reqBuilder = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(fileApiUrl))
+                    .timeout(java.time.Duration.ofSeconds(30))
+                    .header("User-Agent", "Chatroom-Skill-Importer/1.0")
+                    .header("Accept", "application/vnd.github.v3+json");
+            if (githubToken != null && !githubToken.isBlank()) {
+                reqBuilder.header("Authorization", "Bearer " + githubToken);
+            }
+            var req = reqBuilder.GET().build();
+            var resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200) {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> fileObj = mapper.readValue(resp.body(), Map.class);
+                String encoding = (String) fileObj.get("encoding");
+                String content = (String) fileObj.get("content");
+                if ("base64".equals(encoding) && content != null && !content.isBlank()) {
+                    byte[] decoded = java.util.Base64.getDecoder().decode(
+                            content.replaceAll("[\\s\\n\\r]", ""));
+                    return new String(decoded, StandardCharsets.UTF_8);
+                }
+            }
+            log.debug("File API returned {} for {}", resp.statusCode(), fileApiUrl);
+        } catch (Exception e) {
+            log.warn("File API failed for {}: {}", fileApiUrl, e.getMessage());
+        }
+        return null;
     }
 
     /** Add a custom .md file uploaded by user to the skill's custom/ folder. */
@@ -168,13 +285,16 @@ public class SkillFolderService {
 
         StringBuilder sb = new StringBuilder();
 
-        // 1. SKILL.md body (strip YAML frontmatter)
+        // 1. SKILL.md: extract only the system_prompt section (skip emotion/language/few-shot JSON)
         Path skillMd = dir.resolve("SKILL.md");
         if (Files.exists(skillMd)) {
             try {
                 String content = Files.readString(skillMd, StandardCharsets.UTF_8);
                 String body = stripFrontMatter(content);
-                sb.append(body).append("\n\n");
+                String systemPrompt = extractSection(body, "system_prompt");
+                if (!systemPrompt.isEmpty()) {
+                    sb.append(systemPrompt).append("\n\n");
+                }
             } catch (IOException e) {
                 log.warn("Failed to read SKILL.md for {}", skillFolder, e);
             }
@@ -205,55 +325,6 @@ public class SkillFolderService {
     }
 
     // ==================== private helpers ====================
-
-    private void copySkillContent(Path source, Path dest) throws IOException {
-        // Copy SKILL.md if exists
-        Path srcSkillMd = source.resolve("SKILL.md");
-        if (Files.exists(srcSkillMd)) {
-            Files.copy(srcSkillMd, dest.resolve("SKILL.md"), StandardCopyOption.REPLACE_EXISTING);
-        }
-
-        // Copy examples/ directory
-        Path srcExamples = source.resolve("examples");
-        if (Files.exists(srcExamples)) {
-            copyDir(srcExamples, dest.resolve("examples"));
-        }
-
-        // Copy references/ directory
-        Path srcRefs = source.resolve("references");
-        if (Files.exists(srcRefs)) {
-            copyDir(srcRefs, dest.resolve("references"));
-        }
-
-        // Also copy any SKILL.md in root with different casing
-        try (Stream<Path> stream = Files.list(source)) {
-            stream.filter(f -> f.getFileName().toString().equalsIgnoreCase("SKILL.md")
-                            && !f.equals(srcSkillMd))
-                    .forEach(f -> {
-                        try {
-                            Files.copy(f, dest.resolve("SKILL.md"), StandardCopyOption.REPLACE_EXISTING);
-                        } catch (IOException ignored) {}
-                    });
-        }
-    }
-
-    private void copyDir(Path src, Path dst) throws IOException {
-        Files.createDirectories(dst);
-        try (Stream<Path> stream = Files.walk(src)) {
-            stream.forEach(source -> {
-                try {
-                    Path target = dst.resolve(src.relativize(source));
-                    if (Files.isDirectory(source)) {
-                        Files.createDirectories(target);
-                    } else {
-                        Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                } catch (IOException e) {
-                    log.warn("Failed to copy {} -> {}", source, e.getMessage());
-                }
-            });
-        }
-    }
 
     private void appendDirContents(StringBuilder sb, Path dir) {
         try (Stream<Path> stream = Files.walk(dir)) {
@@ -289,6 +360,33 @@ public class SkillFolderService {
                 .collect(Collectors.joining("\n"));
     }
 
+    /** Extract a named section from markdown body. Returns only the content under the
+     *  `## sectionName` heading up to the next `## ` heading. If the section heading
+     *  is not found, returns the entire body as-is for backward compatibility. */
+    private String extractSection(String markdown, String sectionName) {
+        String[] lines = markdown.split("\r?\n");
+        StringBuilder buf = new StringBuilder();
+        boolean inSection = false;
+        boolean foundAnySection = false;
+        for (String line : lines) {
+            if (line.startsWith("## ")) {
+                foundAnySection = true;
+                if (inSection) break;
+                if (line.substring(3).trim().equals(sectionName)) {
+                    inSection = true;
+                }
+                continue;
+            }
+            if (inSection) {
+                buf.append(line).append("\n");
+            }
+        }
+        if (!foundAnySection) {
+            return markdown.trim();
+        }
+        return buf.toString().trim();
+    }
+
     private void deleteRecursively(Path path) throws IOException {
         if (!Files.exists(path)) return;
         Files.walkFileTree(path, new SimpleFileVisitor<>() {
@@ -311,5 +409,53 @@ public class SkillFolderService {
 
     private String sanitizeFilename(String name) {
         return name.replaceAll("[\\\\/:*?\"<>|]", "_");
+    }
+
+    /** Generate SKILL.md content from a BotSkill entity. */
+    public String generateSkillMd(com.chatroom.model.entity.BotSkill skill) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("---\n");
+        sb.append("name: ").append(skill.getSkillName() != null ? skill.getSkillName() : "Bot").append("\n");
+        sb.append("model: ").append(skill.getModel() != null ? skill.getModel() : "").append("\n");
+        sb.append("api_endpoint: ").append(skill.getApiEndpoint() != null ? skill.getApiEndpoint() : "").append("\n");
+        if (skill.getConversationMode() != null) sb.append("conversation_mode: ").append(skill.getConversationMode()).append("\n");
+        sb.append("max_tokens: ").append(skill.getMaxTokens() != null ? skill.getMaxTokens() : 200).append("\n");
+        sb.append("temperature: ").append(skill.getTemperature() != null ? skill.getTemperature() : 0.8).append("\n");
+        sb.append("memory_size: ").append(skill.getMemorySize() != null ? skill.getMemorySize() : 10).append("\n");
+        sb.append("rag_enabled: ").append(skill.getRagEnabled() == 1).append("\n");
+        sb.append("rag_top_k: ").append(skill.getRagTopK() != null ? skill.getRagTopK() : 3).append("\n");
+        sb.append("---\n\n");
+        sb.append("## system_prompt\n");
+        if (skill.getSystemPrompt() != null && !skill.getSystemPrompt().isBlank()) {
+            sb.append(skill.getSystemPrompt()).append("\n");
+        } else {
+            sb.append("(在此编写人物系统提示词)\n");
+        }
+        if (skill.getEmotionProfileJson() != null && !skill.getEmotionProfileJson().isBlank()) {
+            sb.append("\n## emotion_profile\n").append(skill.getEmotionProfileJson()).append("\n");
+        }
+        if (skill.getLanguageStyleJson() != null && !skill.getLanguageStyleJson().isBlank()) {
+            sb.append("\n## language_style\n").append(skill.getLanguageStyleJson()).append("\n");
+        }
+        if (skill.getFewShotExamples() != null && !skill.getFewShotExamples().isBlank()
+                && !"[]".equals(skill.getFewShotExamples())) {
+            sb.append("\n## few_shot_examples\n").append(skill.getFewShotExamples()).append("\n");
+        }
+        return sb.toString();
+    }
+
+    /** Write SKILL.md content to the skill folder. */
+    public void writeSkillMd(String skillName, String content) {
+        try {
+            Path dir = resolveSkillDir(skillName);
+            Files.createDirectories(dir.resolve("examples"));
+            Files.createDirectories(dir.resolve("references"));
+            Files.createDirectories(dir.resolve("custom"));
+            Path skillMd = dir.resolve("SKILL.md");
+            Files.writeString(skillMd, content, StandardCharsets.UTF_8);
+            log.info("SKILL.md written for {}", skillName);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write SKILL.md: " + skillName, e);
+        }
     }
 }

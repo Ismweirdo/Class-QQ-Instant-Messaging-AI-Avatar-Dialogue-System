@@ -48,8 +48,11 @@
       <el-divider />
 
       <div class="group-actions">
-        <el-button type="danger" plain @click="handleQuit" :disabled="isOwner">
-          {{ isOwner ? '群主不能退群' : '退出群聊' }}
+        <el-button v-if="isOwner" type="danger" @click="handleDisband" :loading="disbanding">
+          解散群聊
+        </el-button>
+        <el-button v-else type="danger" plain @click="handleQuit">
+          退出群聊
         </el-button>
       </div>
     </template>
@@ -60,7 +63,7 @@
 import { ref, computed } from 'vue'
 import { useContactStore } from '../store/contact'
 import { useUserStore } from '../store/user'
-import { getGroupDetail, inviteMember, removeMember, quitGroup } from '../api/group'
+import { getGroupDetail, inviteMember, removeMember, quitGroup, disbandGroup } from '../api/group'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const props = defineProps({
@@ -80,6 +83,7 @@ const groupDetail = ref(null)
 const showInvite = ref(false)
 const inviteIds = ref([])
 const inviting = ref(false)
+const disbanding = ref(false)
 
 const isOwner = computed(() => {
   if (!groupDetail.value || !userStore.user) return false
@@ -141,6 +145,25 @@ async function handleQuit() {
     emit('refresh')
   } catch (e) {
     // cancel or error
+  }
+}
+
+async function handleDisband() {
+  try {
+    await ElMessageBox.confirm(
+      '解散后所有群成员将被移除，聊天记录将被清空，此操作不可恢复。确定要解散该群聊吗？',
+      '解散群聊',
+      { type: 'error', confirmButtonText: '确定解散', cancelButtonText: '取消' }
+    )
+    disbanding.value = true
+    await disbandGroup(props.group.id)
+    ElMessage.success('群聊已解散')
+    visible.value = false
+    emit('refresh')
+  } catch (e) {
+    // cancel or error
+  } finally {
+    disbanding.value = false
   }
 }
 </script>

@@ -20,6 +20,10 @@ export function deleteFriend(friendId) {
   return request.delete(`/friends/${friendId}`)
 }
 
+export function setRemark(friendId, remark) {
+  return request.put(`/friends/${friendId}/remark`, { remark })
+}
+
 export function getPendingRequests() {
   return request.get('/friends/requests')
 }

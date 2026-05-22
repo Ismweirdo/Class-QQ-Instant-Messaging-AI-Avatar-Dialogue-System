@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @Tag(name = "好友模块")
 @RestController
@@ -53,6 +54,15 @@ public class FriendController {
     @GetMapping
     public Result<List<FriendVO>> getFriendList() {
         return Result.ok(friendService.getFriendList(SecurityUtil.getCurrentUserId()));
+    }
+
+    @Operation(summary = "设置好友备注")
+    @PutMapping("/{friendId}/remark")
+    public Result<Map<String, Object>> setRemark(@PathVariable Long friendId,
+                                                  @RequestBody Map<String, String> body) {
+        String remark = body.get("remark");
+        friendService.setRemark(SecurityUtil.getCurrentUserId(), friendId, remark);
+        return Result.ok(Map.of("friendId", friendId, "remark", remark != null ? remark : ""));
     }
 
     @Operation(summary = "获取待处理的好友申请")

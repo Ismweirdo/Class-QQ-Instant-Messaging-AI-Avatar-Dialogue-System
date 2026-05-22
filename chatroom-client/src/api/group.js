@@ -23,3 +23,19 @@ export function removeMember(groupId, userId) {
 export function quitGroup(groupId) {
   return request.post(`/groups/${groupId}/quit`)
 }
+
+export function getGroupMembers(groupId) {
+  return request.get(`/groups/${groupId}/members`)
+}
+
+export function getGroupBotAutoChat(groupId) {
+  return request.get(`/groups/${groupId}/bot-auto-chat`)
+}
+
+export function disbandGroup(groupId) {
+  return request.delete(`/groups/${groupId}`)
+}
+
+export function setGroupBotAutoChat(groupId, botUserIds) {
+  return request.put(`/groups/${groupId}/bot-auto-chat`, { botUserIds })
+}

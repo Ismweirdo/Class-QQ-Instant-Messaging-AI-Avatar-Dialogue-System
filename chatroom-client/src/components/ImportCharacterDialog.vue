@@ -61,6 +61,7 @@
           </el-button>
         </div>
       </el-tab-pane>
+
     </el-tabs>
   </el-dialog>
 </template>
@@ -71,12 +72,12 @@ import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { importSkillFromUrl, importSkillFile } from '../api/bot'
 
-const emit = defineEmits(['update:modelValue', 'imported'])
-const props = defineProps({ modelValue: Boolean })
+const emit = defineEmits(['update:visible', 'imported'])
+const props = defineProps({ visible: Boolean })
 
 const visible = computed({
-  get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val)
+  get: () => props.visible,
+  set: (val) => emit('update:visible', val)
 })
 
 const activeTab = ref('url')
@@ -101,14 +102,10 @@ async function doImportFromUrl() {
   importingUrl.value = true
   importedSkill.value = null
   try {
-    const res = await importSkillFromUrl(url.value.trim())
-    if (res.code === 200) {
-      importedSkill.value = res.data
-      ElMessage.success(`人物 "${res.data.skillName}" 导入成功`)
-      emit('imported')
-    } else {
-      ElMessage.error(res.message || '导入失败')
-    }
+    const data = await importSkillFromUrl(url.value.trim())
+    importedSkill.value = data
+    ElMessage.success(`人物 "${data.skillName}" 导入成功`)
+    emit('imported')
   } catch (e) {
     ElMessage.error('导入失败: ' + (e.message || '网络错误'))
   } finally {
@@ -132,14 +129,10 @@ async function doImportFromFile() {
   if (!selectedFile) return
   importingFile.value = true
   try {
-    const res = await importSkillFile(selectedFile)
-    if (res.code === 200) {
-      ElMessage.success(`人物 "${res.data.skillName}" 导入成功`)
-      emit('imported')
-      visible.value = false
-    } else {
-      ElMessage.error(res.message || '导入失败')
-    }
+    const data = await importSkillFile(selectedFile)
+    ElMessage.success(`人物 "${data.skillName}" 导入成功`)
+    emit('imported')
+    visible.value = false
   } catch (e) {
     ElMessage.error('导入失败: ' + (e.message || e))
   } finally {

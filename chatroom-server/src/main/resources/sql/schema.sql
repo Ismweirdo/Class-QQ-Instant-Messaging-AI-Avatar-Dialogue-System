@@ -1,5 +1,5 @@
 -- Chatroom Database Schema
--- H2 initializion script (also serves as MySQL DDL reference)
+-- MySQL DDL script
 
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS friends (
     user_id BIGINT NOT NULL,
     friend_id BIGINT NOT NULL,
     status TINYINT DEFAULT 0,
+    remark VARCHAR(100),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_user_friend (user_id, friend_id),
     INDEX idx_user_status (user_id, status),
@@ -69,13 +70,19 @@ CREATE TABLE IF NOT EXISTS bot_skills (
     bot_user_id BIGINT NOT NULL,
     skill_name VARCHAR(100),
     skill_folder VARCHAR(255),
-    emotion_profile_json TEXT,
-    language_style_json TEXT,
-    system_prompt TEXT,
-    few_shot_examples TEXT,
+    emotion_profile_json MEDIUMTEXT,
+    language_style_json MEDIUMTEXT,
+    system_prompt MEDIUMTEXT,
+    few_shot_examples MEDIUMTEXT,
     api_endpoint VARCHAR(255),
     api_key VARCHAR(255),
     model VARCHAR(100),
+    max_tokens INT DEFAULT 4096,
+    temperature DOUBLE DEFAULT 0.8,
+    conversation_mode VARCHAR(50),
+    memory_size INT DEFAULT 10,
+    rag_enabled TINYINT DEFAULT 0,
+    rag_top_k INT DEFAULT 3,
     status TINYINT DEFAULT 1,
     error_count INT DEFAULT 0,
     last_active_at DATETIME,
@@ -83,4 +90,31 @@ CREATE TABLE IF NOT EXISTS bot_skills (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_bot_user (bot_user_id),
     INDEX idx_bot_status (status)
+);
+
+-- All columns included in CREATE TABLE above; no ALTER migration needed for fresh install
+
+CREATE TABLE IF NOT EXISTS bot_long_term_memory (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    bot_user_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    memory_type VARCHAR(20) NOT NULL COMMENT 'summary/fact/preference',
+    content TEXT NOT NULL,
+    importance INT DEFAULT 1 COMMENT '1-5 importance score',
+    source_message_ids TEXT COMMENT 'comma-separated source message IDs',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_bot_user_pair (bot_user_id, user_id),
+    INDEX idx_bot_user_type (bot_user_id, user_id, memory_type)
+);
+
+CREATE TABLE IF NOT EXISTS conversation_embeddings (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    bot_user_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    message_id BIGINT NOT NULL,
+    content TEXT NOT NULL,
+    embedding_json TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_bot_user (bot_user_id, user_id),
+    INDEX idx_message (message_id)
 );

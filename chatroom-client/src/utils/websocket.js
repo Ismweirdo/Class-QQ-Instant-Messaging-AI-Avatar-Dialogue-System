@@ -18,6 +18,7 @@ export function connectWebSocket(token) {
         console.log('WebSocket connected')
         subscribePrivateMessages()
         subscribePresence()
+        subscribeBotStream()
         resolve()
       },
       onDisconnect: () => {
@@ -106,4 +107,31 @@ export function addPresenceHandler(handler) {
 
 export function removePresenceHandler(handler) {
   presenceHandlers = presenceHandlers.filter(h => h !== handler)
+}
+
+let streamHandlers = []
+export function addStreamHandler(handler) { streamHandlers.push(handler) }
+export function removeStreamHandler(handler) { streamHandlers = streamHandlers.filter(h => h !== handler) }
+
+function subscribeBotStream() {
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  if (!user.id) return
+  const sub = stompClient.subscribe(`/user/queue/bot/stream`, msg => {
+    streamHandlers.forEach(h => h(JSON.parse(msg.body)))
+  })
+  subscriptions['bot_stream'] = sub
+}
+
+export function subscribeGroupStream(groupId) {
+  const key = `group_stream_${groupId}`
+  if (subscriptions[key]) return
+  const sub = stompClient.subscribe(`/topic/group/${groupId}/stream`, msg => {
+    streamHandlers.forEach(h => h(JSON.parse(msg.body)))
+  })
+  subscriptions[key] = sub
+}
+
+export function unsubscribeGroupStream(groupId) {
+  const key = `group_stream_${groupId}`
+  if (subscriptions[key]) { subscriptions[key].unsubscribe(); delete subscriptions[key] }
 }

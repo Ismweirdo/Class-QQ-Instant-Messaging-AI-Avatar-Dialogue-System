@@ -3,7 +3,8 @@
     <!-- Header -->
     <div class="chat-header">
       <div class="chat-header-info">
-        <el-avatar class="chat-avatar" :style="type === 'group' ? 'background: linear-gradient(135deg, #f59e0b, #ef4444);' : ''">
+        <el-avatar class="chat-avatar" :src="targetAvatar || undefined"
+          :style="type === 'group' ? 'background: linear-gradient(135deg, #f59e0b, #ef4444);' : ''">
           {{ targetName[0] }}
         </el-avatar>
         <div class="chat-title-wrap">
@@ -13,6 +14,14 @@
       </div>
       <div class="chat-header-actions">
         <template v-if="isBot">
+          <el-popover placement="bottom" :width="360" trigger="click" :hide-after="0">
+            <template #reference>
+              <button class="header-action-btn provider-btn" title="AI 厂商设置">
+                <el-icon><Setting /></el-icon>
+              </button>
+            </template>
+            <ProviderSelector :botUserId="targetId" @updated="onProviderUpdated" />
+          </el-popover>
           <div class="active-mode-toggle" :class="{ active: activeModeEnabled }">
             <span class="toggle-label">主动聊天</span>
             <el-switch v-model="activeModeEnabled" size="small" @change="onActiveToggle" :loading="activeModeLoading" />
@@ -25,19 +34,51 @@
             <el-option :value="120" label="2分钟" />
             <el-option :value="300" label="5分钟" />
           </el-select>
-          <button class="header-action-btn" @click="triggerCustomUpload" title="上传自定义 .md 文件个性化该 Bot">
-            <el-icon><DocumentAdd /></el-icon>
-          </button>
-          <input ref="customFileInput" type="file" accept=".md" style="display:none" @change="onCustomFileChange" />
+          <el-popover placement="bottom" :width="300" trigger="click" :hide-after="0">
+            <template #reference>
+              <button class="header-action-btn" title="快速补充 Bot 设定">
+                <el-icon><DocumentAdd /></el-icon>
+              </button>
+            </template>
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">快速补充 Bot 设定</div>
+            <el-input
+              v-model="quickUpdateText"
+              type="textarea"
+              :rows="3"
+              placeholder="输入要添加的内容，如：他最近喜欢上玩apex"
+              style="margin-bottom:10px"
+            />
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+              <el-button size="small" @click="quickUpdateText = ''">清空</el-button>
+              <el-button size="small" type="primary" @click="onQuickUpdate" :loading="quickUpdating" :disabled="!quickUpdateText.trim()">
+                补充设定
+              </el-button>
+            </div>
+          </el-popover>
         </template>
-        <button class="header-action-btn">
-          <el-icon><Phone /></el-icon>
+        <button class="header-action-btn" @click="$emit('showHistory')" title="聊天记录">
+          <el-icon><Clock /></el-icon>
         </button>
-        <button class="header-action-btn">
-          <el-icon><VideoCamera /></el-icon>
-        </button>
-        <button class="header-action-btn">
-          <el-icon><More /></el-icon>
+        <template v-if="type === 'group'">
+          <el-popover placement="bottom" :width="260" trigger="click">
+            <template #reference>
+              <button class="header-action-btn" title="群机器人管理">
+                <el-icon><Setting /></el-icon>
+              </button>
+            </template>
+            <div class="bot-auto-panel">
+              <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">群机器人自动聊天</div>
+              <div v-if="groupBots.length === 0" style="color:var(--text-muted);font-size:12px;text-align:center;padding:12px">暂无机器人</div>
+              <div v-for="b in groupBots" :key="b.userId" class="bot-toggle-item">
+                <span>{{ b.nickname }}</span>
+                <el-switch v-model="b.enabled" size="small" @change="onBotToggle(b)" />
+              </div>
+              <el-button v-if="groupBots.length > 0" size="small" type="primary" @click="saveBotAutoChat" :loading="savingBots" style="width:100%;margin-top:8px">保存设置</el-button>
+            </div>
+          </el-popover>
+        </template>
+        <button class="header-action-btn" @click="handleClearHistory" title="清除聊天记录">
+          <el-icon><Delete /></el-icon>
         </button>
       </div>
     </div>
@@ -50,7 +91,7 @@
       </div>
       <div v-for="msg in chatStore.currentMessages" :key="msg.id || msg.clientMessageId">
         <MessageBubble :message="msg" :isMine="msg.senderId === userStore.userId"
-          @reply="onReplyMessage(msg)" @recall="onRecallMessage(msg)" />
+          @reply="onReplyMessage(msg)" @recall="onRecallMessage(msg)" @deleteMsg="onDeleteMessage(msg)" />
       </div>
       <div ref="msgEnd"></div>
     </div>
@@ -72,18 +113,36 @@
     <!-- Input -->
     <div class="chat-input">
       <div class="input-tools">
-        <button class="tool-btn">
+        <template v-if="type === 'group'">
+          <el-popover placement="top" :width="200" trigger="click">
+            <template #reference>
+              <button class="tool-btn" title="@提及">
+                <span style="font-weight:700;font-size:16px">@</span>
+              </button>
+            </template>
+            <div class="mention-list">
+              <div class="mention-item mention-all" @click="insertAtAll()">@全体成员</div>
+              <div v-for="m in groupMembers" :key="m.userId" class="mention-item"
+                @click="insertMention(m)">@{{ m.nickname || m.username }}</div>
+              <div v-if="groupMembers === null" style="color:var(--text-muted);text-align:center;padding:12px">加载中...</div>
+              <div v-else-if="groupMembers.length === 0" style="color:var(--text-muted);text-align:center;padding:12px">暂无成员</div>
+            </div>
+          </el-popover>
+        </template>
+        <button class="tool-btn" @click="$refs.fileInput.click()" title="发送文件">
           <el-icon><Paperclip /></el-icon>
         </button>
-        <button class="tool-btn">
+        <button class="tool-btn" @click="$refs.imgInput.click()" title="发送图片">
           <el-icon><Picture /></el-icon>
         </button>
+        <input ref="fileInput" type="file" style="display:none" @change="onFileSelect($event, false)" />
+        <input ref="imgInput" type="file" accept="image/*" style="display:none" @change="onFileSelect($event, true)" />
       </div>
       <div class="input-area">
         <el-input v-model="input" type="textarea" :rows="1" placeholder="输入消息..."
           @keyup.enter.exact="sendMessage" resize="none" />
       </div>
-      <el-button type="primary" class="send-btn" @click="sendMessage" :disabled="!input.trim()">
+      <el-button type="primary" class="send-btn" @click="sendMessage" :disabled="!input.trim() && !uploading">
         <el-icon><ArrowRight /></el-icon>
         <span>发送</span>
       </el-button>
@@ -98,16 +157,22 @@ import { useChatStore } from '../store/chat'
 import { useContactStore } from '../store/contact'
 import { sendChatMessage, subscribeGroupMessages, unsubscribeGroupMessages } from '../utils/websocket'
 import { recallMessage } from '../api/message'
-import { setActiveMode, getActiveMode, uploadCustomFile } from '../api/bot'
-import { ElMessage } from 'element-plus'
-import { Phone, VideoCamera, More, Close, Paperclip, Picture, ArrowRight, DocumentAdd } from '@element-plus/icons-vue'
+import { setActiveMode, getActiveMode, updateBotSkillText } from '../api/bot'
+import { clearChatHistory, deleteMessagePermanently } from '../api/message'
+import { getGroupMembers, getGroupBotAutoChat, setGroupBotAutoChat } from '../api/group'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import axios from 'axios'
+import { Close, Paperclip, Picture, ArrowRight, DocumentAdd, Setting, Clock, Delete } from '@element-plus/icons-vue'
 import MessageBubble from './MessageBubble.vue'
+import ProviderSelector from './ProviderSelector.vue'
 
 const props = defineProps({
   type: { type: String, required: true },
   targetId: { type: Number, required: true },
-  targetName: { type: String, required: true }
+  targetName: { type: String, required: true },
+  targetAvatar: { type: String, default: '' }
 })
+defineEmits(['showHistory'])
 
 const userStore = useUserStore()
 const chatStore = useChatStore()
@@ -196,31 +261,107 @@ async function onIntervalChange(val) {
   }
 }
 
-const customFileInput = ref(null)
-function triggerCustomUpload() {
-  customFileInput.value?.click()
+// Quick bot text update
+const quickUpdateText = ref('')
+const quickUpdating = ref(false)
+
+async function onQuickUpdate() {
+  if (!quickUpdateText.value.trim()) return
+  quickUpdating.value = true
+  try {
+    await updateBotSkillText(props.targetId, quickUpdateText.value.trim())
+    ElMessage.success(`已补充设定：${quickUpdateText.value.trim().substring(0, 20)}...`)
+    quickUpdateText.value = ''
+  } catch {
+    ElMessage.error('补充设定失败')
+  } finally {
+    quickUpdating.value = false
+  }
 }
-async function onCustomFileChange(e) {
+
+function onProviderUpdated() {}
+
+const groupMembers = ref(null)
+async function loadGroupMembers() {
+  if (props.type !== 'group') return
+  try { groupMembers.value = await getGroupMembers(props.targetId) || [] }
+  catch { groupMembers.value = [] }
+}
+function insertMention(member) {
+  input.value += '@' + (member.nickname || member.username) + ' '
+}
+function insertAtAll() {
+  input.value += '@全体成员 '
+}
+
+const groupBots = ref([])
+const savingBots = ref(false)
+async function loadGroupBotConfig() {
+  if (props.type !== 'group') return
+  try {
+    const config = await getGroupBotAutoChat(props.targetId)
+    const enabledIds = new Set((config?.enabledBots || []).map(b => b.botUserId))
+    const members = groupMembers.value || []
+    groupBots.value = members.filter(m => m.isBot).map(m => ({ ...m, enabled: enabledIds.has(m.userId) }))
+  } catch { groupBots.value = [] }
+}
+async function loadGroupMembersAndBots() {
+  await loadGroupMembers()
+  await loadGroupBotConfig()
+}
+function onBotToggle() {}
+async function saveBotAutoChat() {
+  savingBots.value = true
+  try {
+    const enabledIds = groupBots.value.filter(b => b.enabled).map(b => b.userId)
+    await setGroupBotAutoChat(props.targetId, enabledIds)
+    ElMessage.success(`已保存，${enabledIds.length} 个机器人启用群聊`)
+  } catch { ElMessage.error('保存失败') }
+  finally { savingBots.value = false }
+}
+
+async function handleClearHistory() {
+  try {
+    await ElMessageBox.confirm('确定要清除与该联系人的所有聊天记录吗？此操作不可恢复。', '清除聊天记录', {
+      type: 'warning', confirmButtonText: '确定清除', cancelButtonText: '取消'
+    })
+    await clearChatHistory(props.targetId)
+    chatStore.messages[chatKey.value] = []
+    ElMessage.success('聊天记录已清除')
+  } catch { /* cancelled */ }
+}
+
+const uploading = ref(false)
+async function onFileSelect(e, isImage) {
   const file = e.target.files?.[0]
   if (!file) return
+  uploading.value = true
   try {
-    const res = await uploadCustomFile(props.targetId, file)
-    if (res.code === 200) {
-      ElMessage.success(`已上传 ${file.name} 到 Bot 自定义规则`)
-    } else {
-      ElMessage.error(res.message || '上传失败')
+    const formData = new FormData()
+    formData.append('file', file)
+    const token = localStorage.getItem('token')
+    const res = await axios.post('/api/files/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data', Authorization: token ? `Bearer ${token}` : '' }
+    })
+    const d = res.data.data || res.data
+    if (d && d.url) {
+      const contentType = isImage ? 1 : 2
+      const content = isImage ? `[图片] ${d.url}` : `[文件] ${d.originalName} ${d.url}`
+      const dto = { content, messageType: 0, targetId: props.targetId, contentType, clientMessageId: generateUUID() }
+      sendChatMessage(dto)
+      ElMessage.success(isImage ? '图片已发送' : '文件已发送')
     }
-  } catch {
-    ElMessage.error('上传失败')
-  } finally {
-    // Reset input so same file can be re-uploaded
-    if (customFileInput.value) customFileInput.value.value = ''
+  } catch { ElMessage.error('上传失败') }
+  finally {
+    uploading.value = false
+    e.target.value = ''
   }
 }
 
 onMounted(() => {
   loadHistory()
   fetchActiveMode()
+  loadGroupMembersAndBots()
   if (props.type === 'group') {
     subscribeGroupMessages(props.targetId)
   }
@@ -236,6 +377,7 @@ onUnmounted(() => {
 watch(() => props.targetId, () => {
   loadHistory()
   fetchActiveMode()
+  loadGroupMembersAndBots()
   if (props.type === 'group') {
     subscribeGroupMessages(props.targetId)
   }
@@ -275,9 +417,22 @@ async function onRecallMessage(msg) {
   try {
     await recallMessage(msg.id)
     chatStore.updateMessage(chatKey.value, msg.id, { content: '[消息已撤回]' })
-  } catch (e) {
-    // Handled by interceptor
-  }
+  } catch { /* handled by interceptor */ }
+}
+
+async function onDeleteMessage(msg) {
+  try {
+    await ElMessageBox.confirm('确定要删除这条消息吗？', '删除消息', {
+      type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消'
+    })
+    await deleteMessagePermanently(msg.id)
+    // Remove from local state
+    const msgs = chatStore.messages[chatKey.value]
+    if (msgs) {
+      chatStore.messages[chatKey.value] = msgs.filter(m => m.id !== msg.id && m.clientMessageId !== msg.clientMessageId)
+    }
+    ElMessage.success('消息已删除')
+  } catch { /* cancelled */ }
 }
 
 function scrollToBottom() {

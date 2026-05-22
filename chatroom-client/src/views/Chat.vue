@@ -5,7 +5,7 @@
       <div class="sidebar-header">
         <div class="user-info">
           <div class="user-avatar" @click="showProfile = true" title="个人资料">
-            <img v-if="userStore.user?.avatar && !userStore.user.avatar.includes('default')" :src="userStore.user.avatar" class="avatar-img" />
+            <img v-if="userStore.user?.avatar && userStore.user.avatar !== '/avatars/default.png'" :src="userStore.user.avatar" class="avatar-img" />
             <span v-else>{{ (userStore.nickname || userStore.username || '?')[0] }}</span>
           </div>
           <div class="user-details">
@@ -30,22 +30,11 @@
           </el-dropdown>
         </div>
         <div class="header-actions">
-          <el-badge :value="contactStore.pendingRequests.length" :hidden="!contactStore.hasPendingRequests">
-            <button class="action-btn" @click="openFriendRequests">
-              <el-icon><UserFilled /></el-icon>
-            </button>
-          </el-badge>
-          <button class="action-btn" @click="showAddFriend = true">
+          <button class="action-btn" @click="showCreateGroup = true" title="创建群聊">
             <el-icon><Plus /></el-icon>
           </button>
-          <button class="action-btn" @click="showCreateGroup = true">
-            <el-icon><Message /></el-icon>
-          </button>
-          <button class="action-btn" @click="showImportBots = true" title="导入聊天记录文件生成机器人">
+          <button class="action-btn" @click="showImportBots = true" title="导入聊天记录生成机器人">
             <el-icon><Download /></el-icon>
-          </button>
-          <button class="action-btn" @click="showQQImport = true" title="从QQ导入聊天记录生成机器人">
-            <el-icon><ChatDotSquare /></el-icon>
           </button>
           <button class="action-btn" @click="showImportCharacter = true" title="从URL或文件导入人物Skill">
             <el-icon><UserFilled /></el-icon>
@@ -61,7 +50,9 @@
         :type="activeChat.type"
         :targetId="activeChat.id"
         :targetName="activeChat.name"
-        @back="activeChat = null" />
+        :targetAvatar="activeChatAvatar"
+        @back="activeChat = null"
+        @show-history="showHistory = true" />
       <div v-else class="no-chat">
         <div class="no-chat-icon">
           <el-icon :size="64" color="var(--primary-color)"><ChatDotRound /></el-icon>
@@ -114,16 +105,17 @@
 
     <!-- Background Settings Dialog -->
     <BackgroundSettings v-model:visible="showBackground" />
+    <ChatHistoryDialog v-model:visible="showHistory" :targetId="activeChat?.id" :targetName="activeChat?.name" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../store/user'
 import { useContactStore } from '../store/contact'
 import { useChatStore } from '../store/chat'
-import { connectWebSocket, disconnectWebSocket, addMessageHandler, removeMessageHandler, addPresenceHandler, removePresenceHandler, subscribeGroupMessages } from '../utils/websocket'
+import { connectWebSocket, disconnectWebSocket, addMessageHandler, removeMessageHandler, addPresenceHandler, removePresenceHandler, subscribeGroupMessages, addStreamHandler, removeStreamHandler, subscribeGroupStream, unsubscribeGroupStream } from '../utils/websocket'
 import { acceptFriendRequest, rejectFriendRequest } from '../api/friend'
 import { deleteAccount } from '../api/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -138,6 +130,7 @@ import QQImportDialog from '../components/QQImportDialog.vue'
 import ImportCharacterDialog from '../components/ImportCharacterDialog.vue'
 import ProfileDialog from '../components/ProfileDialog.vue'
 import BackgroundSettings from '../components/BackgroundSettings.vue'
+import ChatHistoryDialog from '../components/ChatHistoryDialog.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -149,6 +142,13 @@ const showCreateGroup = ref(false)
 const showImportBots = ref(false)
 const showQQImport = ref(false)
 const showImportCharacter = ref(false)
+const showHistory = ref(false)
+
+const activeChatAvatar = computed(() => {
+  if (!activeChat.value || activeChat.value.type !== 'private') return ''
+  const friend = contactStore.friendList.find(f => f.friendId === activeChat.value.id)
+  return friend?.avatar || ''
+})
 const showFriendRequests = ref(false)
 const showGroupInfo = ref(false)
 const showProfile = ref(false)
@@ -214,6 +214,39 @@ function handleMessage(msg) {
   })
 }
 
+function handleStream(data) {
+  if (data.type === 'BOT_STREAM_START') {
+    const chatKey = data.isGroup ? `group_${data.targetId}` : `private_${data.botUserId}`
+    chatStore.addMessage(chatKey, {
+      id: 'stream_' + data.botUserId,
+      senderId: data.botUserId,
+      senderName: '...',
+      content: '思考中...',
+      contentType: 0,
+      createdAt: new Date().toISOString(),
+      _streaming: true,
+      _botUserId: data.botUserId
+    })
+  } else if (data.type === 'BOT_STREAM_CHUNK') {
+    const chatKey = data.isGroup ? `group_${data.targetId}` : `private_${data.botUserId}`
+    const msgs = chatStore.messages[chatKey]
+    if (msgs) {
+      const msg = msgs.find(m => m._streaming && m._botUserId === data.botUserId)
+      if (msg) msg.content += data.token
+    }
+  } else if (data.type === 'BOT_STREAM_END') {
+    const chatKey = data.isGroup ? `group_${data.targetId}` : `private_${data.botUserId}`
+    const msgs = chatStore.messages[chatKey]
+    if (msgs) {
+      const msg = msgs.find(m => m._streaming && m._botUserId === data.botUserId)
+      if (msg) {
+        msg._streaming = false
+        msg.content = data.content
+      }
+    }
+  }
+}
+
 function handlePresence(data) {
   contactStore.updateFriendStatus(data.userId, data.status === 'ONLINE')
 }
@@ -271,6 +304,7 @@ async function subscribeAllGroups() {
   const groups = contactStore.groupList
   for (const g of groups) {
     subscribeGroupMessages(g.id)
+    subscribeGroupStream(g.id)
   }
 }
 
@@ -284,6 +318,7 @@ onMounted(async () => {
       await connectWebSocket(token)
       addMessageHandler(handleMessage)
       addPresenceHandler(handlePresence)
+      addStreamHandler(handleStream)
       // Subscribe to all group topics
       subscribeAllGroups()
     } catch (e) {
@@ -307,70 +342,40 @@ onUnmounted(() => {
 }
 
 .sidebar {
-  width: 360px;
+  width: 340px;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border-light);
-  box-shadow: var(--shadow-sm);
+  border-right: 1px solid var(--border-color);
 }
 
 .sidebar-header {
-  padding: 20px 24px;
-  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-  color: white;
+  padding: 16px 20px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .user-info {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .user-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  font-weight: 600;
-  backdrop-filter: blur(10px);
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.3s ease;
+  width: 42px; height: 42px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 600; color: white; overflow: hidden;
+  cursor: pointer; transition: transform 0.2s; flex-shrink: 0;
 }
+.user-avatar:hover { transform: scale(1.08); }
+.user-avatar .avatar-img { width: 100%; height: 100%; object-fit: cover; }
 
-.user-avatar:hover {
-  transform: scale(1.08);
-}
-
-.user-avatar .avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.user-details {
-  flex: 1;
-  margin-left: 12px;
-}
-
-.nickname {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-.status-indicator {
-  display: flex;
-  align-items: center;
-  font-size: 12px;
-  opacity: 0.9;
-}
+.user-details { flex: 1; min-width: 0; }
+.nickname { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.status-indicator { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success-color); flex-shrink: 0; }
 
 .status-dot {
   width: 8px;
@@ -410,26 +415,16 @@ onUnmounted(() => {
 }
 
 .action-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.15);
-  border: none;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--bg-secondary); border: none;
+  color: var(--text-secondary); display: flex;
+  align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s;
 }
+.action-btn:hover { background: var(--bg-hover); color: var(--primary-color); }
 
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.25);
-  transform: translateY(-2px);
-}
-
-.action-btn:active {
-  transform: translateY(0);
+.header-actions {
+  display: flex; gap: 6px; flex-wrap: wrap;
 }
 
 .chat-area {

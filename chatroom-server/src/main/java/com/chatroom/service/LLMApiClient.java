@@ -1,72 +1,132 @@
 package com.chatroom.service;
 
-import com.chatroom.common.Constants;
-import lombok.RequiredArgsConstructor;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.hc.client5.http.classic.HttpClient;
+import org.apache.hc.client5.http.config.ConnectionConfig;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.springframework.http.*;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.client.HttpStatusCodeException;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LLMApiClient {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public LLMApiClient() {
+        // Connection pool: sized for stress testing (200+ concurrent bots)
+        PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager();
+        cm.setMaxTotal(300);
+        cm.setDefaultMaxPerRoute(300);
+        cm.setDefaultConnectionConfig(ConnectionConfig.custom()
+                .setConnectTimeout(30, TimeUnit.SECONDS)
+                .setSocketTimeout(180, TimeUnit.SECONDS)
+                .build());
+
+        HttpClient httpClient = HttpClientBuilder.create()
+                .setConnectionManager(cm)
+                .build();
+
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
+        this.restTemplate = new RestTemplate(factory);
+    }
 
     public String chat(String apiEndpoint, String apiKey, String model,
-                       String systemPrompt, List<Map<String, String>> messages) {
+                       List<Map<String, String>> messages,
+                       int maxTokens, double temperature) {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(apiKey);
 
-            List<Map<String, String>> fullMessages = new java.util.ArrayList<>();
-            fullMessages.add(Map.of("role", "system", "content", systemPrompt));
-            fullMessages.addAll(messages);
-
             Map<String, Object> body = Map.of(
-                "model", model,
-                "messages", fullMessages,
-                "max_tokens", 150,
-                "temperature", 0.8
+                "model", model, "messages", messages,
+                "max_tokens", maxTokens, "temperature", temperature
             );
 
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-            ResponseEntity<Map> response = restTemplate.postForEntity(apiEndpoint, request, Map.class);
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                    apiEndpoint, new HttpEntity<>(body, headers), Map.class);
 
             if (response.getBody() != null) {
+                @SuppressWarnings("unchecked")
                 List<Map<String, Object>> choices = (List<Map<String, Object>>) response.getBody().get("choices");
                 if (choices != null && !choices.isEmpty()) {
-                    Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-                    return (String) message.get("content");
+                    return (String) ((Map<String, Object>) choices.get(0).get("message")).get("content");
                 }
             }
-        } catch (HttpStatusCodeException e) {
-            log.error("LLM API error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new RuntimeException("LLM API error: " + e.getStatusCode());
         } catch (Exception e) {
-            log.error("LLM API call failed", e);
-            throw new RuntimeException("LLM API call failed: " + e.getMessage());
+            log.error("LLM API call failed: {}", e.getMessage());
+            throw new RuntimeException("LLM API error: " + e.getMessage());
         }
         return null;
     }
 
-    public boolean healthCheck(String apiEndpoint, String apiKey) {
+    public String chatStream(String apiEndpoint, String apiKey, String model,
+                              List<Map<String, String>> messages,
+                              int maxTokens, double temperature,
+                              Consumer<String> onChunk) {
         try {
             HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(apiKey);
-            HttpEntity<Void> request = new HttpEntity<>(headers);
-            restTemplate.exchange(apiEndpoint.replace("/chat/completions", "/models"),
-                    HttpMethod.GET, request, String.class);
-            return true;
+
+            Map<String, Object> body = Map.of(
+                "model", model, "messages", messages,
+                "max_tokens", maxTokens, "temperature", temperature,
+                "stream", true
+            );
+
+            // Use same pooled client for streaming
+            StringBuilder fullText = new StringBuilder();
+            restTemplate.execute(apiEndpoint, HttpMethod.POST,
+                req -> {
+                    req.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+                    req.getHeaders().setBearerAuth(apiKey);
+                    req.getBody().write(objectMapper.writeValueAsBytes(body));
+                },
+                res -> {
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(res.getBody()))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            if (line.startsWith("data: ")) {
+                                String data = line.substring(6);
+                                if ("[DONE]".equals(data)) break;
+                                try {
+                                    @SuppressWarnings("unchecked")
+                                    Map<String, Object> chunk = objectMapper.readValue(data, Map.class);
+                                    @SuppressWarnings("unchecked")
+                                    List<Map<String, Object>> choices = (List<Map<String, Object>>) chunk.get("choices");
+                                    if (choices != null && !choices.isEmpty()) {
+                                        Map<String, Object> delta = (Map<String, Object>) choices.get(0).get("delta");
+                                        if (delta != null && delta.containsKey("content")) {
+                                            String token = (String) delta.get("content");
+                                            fullText.append(token);
+                                            onChunk.accept(token);
+                                        }
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                        }
+                    }
+                    return fullText.toString();
+                });
+
+            return fullText.toString();
         } catch (Exception e) {
-            log.warn("API health check failed for {}", apiEndpoint);
-            return false;
+            log.error("LLM stream call failed: {}", e.getMessage());
+            throw new RuntimeException("LLM stream error: " + e.getMessage());
         }
     }
 }

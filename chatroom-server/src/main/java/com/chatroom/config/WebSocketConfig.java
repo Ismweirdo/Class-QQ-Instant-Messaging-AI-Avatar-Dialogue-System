@@ -63,5 +63,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(new UserSubscriptionInterceptor());
+        // Scale thread pool for stress testing (many concurrent WS connections)
+        registration.taskExecutor().corePoolSize(20);
+        registration.taskExecutor().maxPoolSize(100);
+    }
+
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.taskExecutor().corePoolSize(20);
+        registration.taskExecutor().maxPoolSize(100);
     }
 }
